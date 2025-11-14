@@ -1,9 +1,7 @@
 #!/bin/bash
 
 # --- CONFIGURATION ---
-# This is the PID file to track the running stream
 PID_FILE="/tmp/streamer.pid"
-# If your repo's main branch is 'master', change this:
 GIT_BRANCH="main"
 
 # --- COLORS ---
@@ -23,7 +21,7 @@ show_header() {
     echo "   / _ \ / /_ / /__ __/ /_   / _ \/ /__"
     echo "  / ___// __// / -_) / __/  / ___/ / -_)"
     echo " /_/   \__//_/\__/\__\__/  /_/  /_/\__/"
-    echo "  ${PURPLE}Tailscale Webcam Streamer v2.4 (Software Encode)${NC}"
+    echo "  ${PURPLE}Tailscale Webcam Streamer v2.6 (gphoto2)${NC}"
     echo ""
 }
 
@@ -31,12 +29,12 @@ show_header() {
 
 # 1. Install Dependencies
 install_dependencies() {
-    echo -e "${YELLOW}Installing dependencies (git, gstreamer)...${NC}"
+    echo -e "${YELLOW}Installing dependencies (git, gstreamer, gphoto2)...${NC}"
     echo "This may take a few minutes."
     
     sudo apt-get update
-    # --- FIX: Added gstreamer1.0-libav ---
-    sudo apt-get install -y git gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
+    # --- UPDATED: Added gphoto2 and libgphoto2-6 ---
+    sudo apt-get install -y git gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav gphoto2 libgphoto2-6
     
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}Dependencies installed successfully.${NC}"
@@ -53,34 +51,6 @@ start_stream() {
         return 1
     fi
 
-    # --- Camera Selection ---
-    echo -e "${YELLOW}Detecting cameras...${NC}"
-    local cameras
-    cameras=(/dev/video*)
-    
-    local CAMERA_DEVICE
-    
-    if [ ! -e "${cameras[0]}" ]; then
-        echo -e "${RED}Error: No cameras found (/dev/video*).${NC}"
-        echo "Please ensure your webcam is plugged in."
-        return 1
-    elif [ "${#cameras[@]}" -eq 1 ]; then
-        CAMERA_DEVICE="${cameras[0]}"
-        echo -e "${GREEN}One camera found: $CAMERA_DEVICE. Using it automatically.${NC}"
-    else
-        echo -e "${YELLOW}Multiple cameras found. Please choose one:${NC}"
-        select camera_choice in "${cameras[@]}"; do
-            if [[ -n "$camera_choice" ]]; then
-                CAMERA_DEVICE="$camera_choice"
-                echo -e "${GREEN}Using: $CAMERA_DEVICE${NC}"
-                break
-            else
-                echo -e "${RED}Invalid selection. Please try again.${NC}"
-            fi
-        done
-    fi
-    # --- End Camera Selection ---
-
     echo -e "${YELLOW}Enter your server's Tailscale IP address:${NC}"
     read -r SERVER_IP
 
@@ -91,31 +61,27 @@ start_stream() {
 
     # --- Stream Configuration ---
     PORT="5000"
-    WIDTH=1920
-    HEIGHT=1080
-    FRAMERATE=30
-    BITRATE=6000000 # 6 Mbps = 6000 Kbps
 
-    echo -e "${GREEN}Starting stream from $CAMERA_DEVICE to $SERVER_IP:$PORT...${NC}"
-    echo "Settings: ${WIDTH}x${HEIGHT} @ ${FRAMERATE}fps, Bitrate: $BITRATE"
-    echo -e "${YELLOW}WARNING: Using software encoder (x264enc). This will use more CPU.${NC}"
+    echo -e "${GREEN}Starting stream from gphoto2 (EOS Camera) to $SERVER_IP:$PORT...${NC}"
+    echo -e "${CYAN}This is now an ultra-lightweight stream! No software encoding.${NC}"
 
-    # --- FIX: Switched to x264enc (software encoder) ---
-    # 'bitrate' for x264enc is in Kbps, so we divide by 1000
-    # 'tune=zerolatency' is critical for streaming
-    nohup gst-launch-1.0 v4l2src device=$CAMERA_DEVICE \
-        ! "video/x-raw,width=$WIDTH,height=$HEIGHT,framerate=${FRAMERATE}/1" \
-        ! videoconvert \
-        ! x264enc bitrate=$(($BITRATE/1000)) tune=zerolatency \
-        ! "video/x-h264,profile=high" \
+    # --- UPDATED: gphoto2 pipeline ---
+    # This pipes the camera's native H.264 stream directly to GStreamer.
+    # - gphoto2: Captures the movie stream and sends to stdout.
+    # - fdsrc: GStreamer element that reads from a file descriptor (fd=0 is stdin).
+    # - h264parse: Parses the H.264 stream for network transmission.
+    # - rtph264pay: Packages the H.264 video into RTP packets.
+    # - udpsink: Sends the packets to the server.
+    nohup bash -c "gphoto2 --stdout --capture-movie | \
+        gst-launch-1.0 -q fdsrc fd=0 \
         ! h264parse \
         ! rtph264pay config-interval=1 pt=96 \
-        ! udpsink host="$SERVER_IP" port=$PORT > /tmp/streamer.log 2>&1 &
+        ! udpsink host=$SERVER_IP port=$PORT" > /tmp/streamer.log 2>&1 &
     
     # Save the PID of the background process
     echo $! > "$PID_FILE"
     
-    sleep 1
+    sleep 2 # Give it a moment to start
     if ps -p $(cat $PID_FILE) > /dev/null; then
         echo -e "${GREEN}Stream started successfully! (PID $(cat $PID_FILE))${NC}"
         echo "Log available at /tmp/streamer.log"
@@ -155,68 +121,59 @@ self_update() {
     SCRIPT_NAME=$(basename "$0")
     
     if ! git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
-        echo -e "${RED}Error: This script is not inside a git repository.${NC}"
-        echo "Please clone the repository first to enable updates."
+        echo -e "${RED}Error: This script is not in a git repository.${NC}"
         return 1
     fi
 
     echo "Creating temporary updater stub..."
-    
-    # Create the updater stub
     cat << EOF > ./updater.sh
 #!/bin/bash
 echo "Fetching updates from git..."
 git fetch --all
 git reset --hard origin/$GIT_BRANCH
-
 if [ $? -ne 0 ]; then
     echo -e "${RED}Error: 'git reset' failed. Update aborted.${NC}"
-    echo "You may need to resolve conflicts manually."
-    rm -- "\$0" # Delete self (the updater)
+    rm -- "\$0"
     exit 1
 fi
-
 echo "Update successful."
 echo "Relaunching $SCRIPT_NAME..."
 chmod +x "$SCRIPT_NAME"
-
-# Delete this updater script and exec the new main script
 rm -- "\$0"
 exec "./$SCRIPT_NAME"
 EOF
-
-    # Make the updater executable
     chmod +x ./updater.sh
-
     echo -e "${GREEN}Handing over to updater. The script will now restart...${NC}"
-    
-    # Execute the updater and exit this script
     exec ./updater.sh
 }
 
+# --- UPDATED: Now uses gphoto2 ---
 # 5. Check Camera
 check_camera() {
-    echo -e "${YELLOW}Checking for connected cameras...${NC}"
+    if ! command -v gphoto2 &> /dev/null; then
+        echo -e "${RED}'gphoto2' not found. Run 'Install/Update Dependencies' first.${NC}"
+        return 1
+    fi
+
+    echo -e "${YELLOW}Checking for gphoto2-compatible cameras...${NC}"
     
-    # Check if any /dev/video* devices exist
-    if ls /dev/video* 1> /dev/null 2>&1; then
+    if gphoto2 --auto-detect | grep -q "Canon"; then
         echo -e "${GREEN}Success! Found the following camera(s):${NC}"
-        # List all video devices
-        ls -l /dev/video*
+        gphoto2 --auto-detect
     else
-        echo -e "${RED}Error: No cameras found.${NC}"
-        echo "Please ensure your webcam is plugged in."
+        echo -e "${RED}Error: No gphoto2 cameras found.${NC}"
+        echo "Please ensure your EOS camera is plugged in and set to movie mode."
     fi
 }
 
 
-# --- MAIN MENU ---
+# --- MAIN MENU (Re-numbered) ---
 while true; do
     show_header
     echo -e "${GREEN}1.${NC} Install/Update Dependencies"
     echo -e "${GREEN}2.${NC} Start Stream"
     echo -e "${GREEN}3.${NC} Stop Stream"
-    echo -e "${CYAN}4.${NC} Check Camera"
+    echo -e "${CYAN}4.${NC} Check Camera (gphoto2)"
     echo -e "${YELLOW}5.${NC} Update This Script (from GitHub)"
     echo -e "${RED}6.${NC} Exit"
     echo ""
@@ -233,21 +190,21 @@ while true; do
         3)
             stop_stream
             ;;
-        4 | 4)
+        4)
             check_camera
             ;;
-        5 | 5)
+        5)
             self_update
             ;;
-        6 | 6)
+        6)
             echo "Exiting."
-            stop_stream # Ensure stream is stopped on exit
+            stop_stream
             exit 0
             ;;
         *)
             echo -e "${RED}Invalid option. Please try again.${NC}"
             ;;
-    esac
+    ac
     echo ""
     echo "Press Enter to return to the menu..."
     read -r
