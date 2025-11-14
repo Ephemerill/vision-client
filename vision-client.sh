@@ -23,7 +23,7 @@ show_header() {
     echo "   / _ \ / /_ / /__ __/ /_   / _ \/ /__"
     echo "  / ___// __// / -_) / __/  / ___/ / -_)"
     echo " /_/   \__//_/\__/\__\__/  /_/  /_/\__/"
-    echo "  ${PURPLE}Tailscale Webcam Streamer v2.3 (Camera Select)${NC}"
+    echo "  ${PURPLE}Tailscale Webcam Streamer v2.4 (Software Encode)${NC}"
     echo ""
 }
 
@@ -35,8 +35,8 @@ install_dependencies() {
     echo "This may take a few minutes."
     
     sudo apt-get update
-    # Removed 'gstreamer1.0-omx-rpi' which is for RPi OS
-    sudo apt-get install -y git gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly
+    # --- FIX: Added gstreamer1.0-libav ---
+    sudo apt-get install -y git gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
     
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}Dependencies installed successfully.${NC}"
@@ -53,7 +53,7 @@ start_stream() {
         return 1
     fi
 
-    # --- NEW: Camera Selection ---
+    # --- Camera Selection ---
     echo -e "${YELLOW}Detecting cameras...${NC}"
     local cameras
     cameras=(/dev/video*)
@@ -94,18 +94,19 @@ start_stream() {
     WIDTH=1920
     HEIGHT=1080
     FRAMERATE=30
-    BITRATE=6000000 # 6 Mbps
+    BITRATE=6000000 # 6 Mbps = 6000 Kbps
 
-    # --- UPDATED: Shows which camera is being used ---
     echo -e "${GREEN}Starting stream from $CAMERA_DEVICE to $SERVER_IP:$PORT...${NC}"
     echo "Settings: ${WIDTH}x${HEIGHT} @ ${FRAMERATE}fps, Bitrate: $BITRATE"
+    echo -e "${YELLOW}WARNING: Using software encoder (x264enc). This will use more CPU.${NC}"
 
-    # GStreamer Pipeline for Ubuntu on Pi (v4l2h264enc)
-    # --- UPDATED: Uses $CAMERA_DEVICE variable ---
+    # --- FIX: Switched to x264enc (software encoder) ---
+    # 'bitrate' for x264enc is in Kbps, so we divide by 1000
+    # 'tune=zerolatency' is critical for streaming
     nohup gst-launch-1.0 v4l2src device=$CAMERA_DEVICE \
         ! "video/x-raw,width=$WIDTH,height=$HEIGHT,framerate=${FRAMERATE}/1" \
         ! videoconvert \
-        ! v4l2h264enc extra-controls="controls,video_bitrate=$BITRATE;" \
+        ! x264enc bitrate=$(($BITRATE/1000)) tune=zerolatency \
         ! "video/x-h264,profile=high" \
         ! h264parse \
         ! rtph264pay config-interval=1 pt=96 \
