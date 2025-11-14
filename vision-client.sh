@@ -72,26 +72,24 @@ start_stream() {
 
     # --- Stream Configuration ---
     PORT="5000"
-    BITRATE="4000" # Bitrate is in kbit/s for x264enc (4000 = 4 Mbps)
     
-    # --- FINAL Pipeline: Software Encoding + 720p Scaling ---
-    # This pipeline scales the video down to 720p *before*
-    # encoding it with the CPU. This dramatically reduces the
-    # CPU load and will fix the "choppy" stream.
+    # --- FINAL PLAN: 720p MJPEG Stream ---
+    # We are giving up on H.264. It's a buggy-driver-and-stuttery-mess.
+    # We are going back to your ORIGINAL low-latency MJPEG pipeline,
+    # but we will scale to 720p on the Pi to fix the bandwidth.
+    # 'jpegenc' is *much* faster than 'x264enc'.
     
-    echo -e "${GREEN}Starting CPU-based H.264 stream to $SERVER_IP:$PORT...${NC}"
-    echo -e "${CYAN}Downscaling to 720p to ensure smooth 30fps.${NC}"
+    echo -e "${GREEN}Starting 720p MJPEG stream to $SERVER_IP:$PORT...${NC}"
+    echo -e "${CYAN}This is low-latency and fixes the bandwidth problem.${NC}"
     
     PIPELINE="gst-launch-1.0 -q fdsrc fd=0 \
         ! jpegparse \
         ! avdec_mjpeg \
         ! videoconvert \
         ! videoscale \
-        ! videorate \
-        ! capsfilter caps=\"video/x-raw,format=I420,width=1280,height=720,framerate=30/1\" \
-        ! x264enc speed-preset=ultrafast tune=zerolatency bitrate=$BITRATE \
-        ! h264parse \
-        ! rtph264pay config-interval=1 pt=96 \
+        ! capsfilter caps=\"video/x-raw,width=1280,height=720\" \
+        ! jpegenc quality=90 \
+        ! rtpjpegpay pt=96 \
         ! udpsink host=$SERVER_IP port=$PORT"
 
     # --- Start the chosen pipeline ---
