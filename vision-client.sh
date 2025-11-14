@@ -23,7 +23,7 @@ show_header() {
     echo "   / _ \ / /_ / /__ __/ /_   / _ \/ /__"
     echo "  / ___// __// / -_) / __/  / ___/ / -_)"
     echo " /_/   \__//_/\__/\__\__/  /_/  /_/\__/"
-    echo "  ${PURPLE}Tailscale Webcam Streamer v2.1 (Ubuntu Fix)${NC}"
+    echo "  ${PURPLE}Tailscale Webcam Streamer v0.1 (Ubuntu Fix)${NC}"
     echo ""
 }
 
