@@ -21,7 +21,7 @@ show_header() {
     echo "   / _ \ / /_ / /__ __/ /_   / _ \/ /__"
     echo "  / ___// __// / -_) / __/  / ___/ / -_)"
     echo " /_/   \__//_/\__/\__\__/  /_/  /_/\__/"
-    echo "  ${PURPLE}Tailscale Webcam Streamer v2.11 (UDP Test)${NC}"
+    echo "  ${PURPLE}Tailscale Webcam Streamer v2.12 (Parser Fix)${NC}"
     echo ""
 }
 
@@ -65,9 +65,11 @@ start_stream() {
     echo -e "${GREEN}Starting stream from gphoto2 (EOS Camera) to $SERVER_IP:$PORT...${NC}"
     echo -e "${CYAN}Using ultra-lightweight MJPEG pass-through. No CPU encoding!${NC}"
 
-    # --- MJPEG pipeline with pt=96 (payload type) ---
+    # --- UPDATED: Added 'jpegparse' as suggested by the error log ---
+    # This identifies the stream as JPEG before payloading it.
     nohup bash -c "gphoto2 --stdout --capture-movie | \
         gst-launch-1.0 -q fdsrc fd=0 \
+        ! jpegparse \
         ! rtpjpegpay pt=96 \
         ! udpsink host=$SERVER_IP port=$PORT" > /tmp/streamer.log 2>&1 &
     
@@ -184,7 +186,6 @@ handshake_test_tcp() {
     fi
 }
 
-# --- NEW FUNCTION ---
 # 7. Handshake Test (UDP)
 handshake_test_udp() {
     if ! command -v nc &> /dev/null; then
