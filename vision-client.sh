@@ -23,7 +23,7 @@ show_header() {
     echo "   / _ \ / /_ / /__ __/ /_   / _ \/ /__"
     echo "  / ___// __// / -_) / __/  / ___/ / -_)"
     echo " /_/   \__//_/\__/\__\__/  /_/  /_/\__/"
-    echo "  ${PURPLE}Tailscale Webcam Streamer v0.1 (Ubuntu Fix)${NC}"
+    echo "  ${PURPLE}Tailscale Webcam Streamer v2.2 (Camera Check)${NC}"
     echo ""
 }
 
@@ -35,7 +35,7 @@ install_dependencies() {
     echo "This may take a few minutes."
     
     sudo apt-get update
-    # --- FIX: Removed 'gstreamer1.0-omx-rpi' which is only for Raspberry Pi OS ---
+    # Removed 'gstreamer1.0-omx-rpi' which is for RPi OS
     sudo apt-get install -y git gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly
     
     if [ $? -eq 0 ]; then
@@ -71,8 +71,7 @@ start_stream() {
     echo -e "${GREEN}Starting stream to $SERVER_IP:$PORT...${NC}"
     echo "Settings: ${WIDTH}x${HEIGHT} @ ${FRAMERATE}fps, Bitrate: $BITRATE"
 
-    # GStreamer Pipeline
-    # --- FIX: Changed 'omxh264enc' (RPi OS) to 'v4l2h264enc' (Ubuntu) ---
+    # GStreamer Pipeline for Ubuntu on Pi (v4l2h264enc)
     nohup gst-launch-1.0 v4l2src device=/dev/video0 \
         ! "video/x-raw,width=$WIDTH,height=$HEIGHT,framerate=${FRAMERATE}/1" \
         ! videoconvert \
@@ -121,11 +120,9 @@ stop_stream() {
 self_update() {
     echo -e "${YELLOW}Attempting to self-update...${NC}"
 
-    # Get the name of the script we are currently running
     local SCRIPT_NAME
     SCRIPT_NAME=$(basename "$0")
     
-    # Check if we are in a git repository
     if ! git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
         echo -e "${RED}Error: This script is not inside a git repository.${NC}"
         echo "Please clone the repository first to enable updates."
@@ -134,9 +131,7 @@ self_update() {
 
     echo "Creating temporary updater stub..."
     
-    # Create the updater stub. It will run after this main script exits.
-    # It pulls the latest code, makes the main script executable,
-    # deletes itself, and then re-launches the new main script.
+    # Create the updater stub
     cat << EOF > ./updater.sh
 #!/bin/bash
 echo "Fetching updates from git..."
@@ -168,6 +163,22 @@ EOF
     exec ./updater.sh
 }
 
+# --- NEW FUNCTION ---
+# 5. Check Camera
+check_camera() {
+    echo -e "${YELLOW}Checking for connected cameras...${NC}"
+    
+    # Check if any /dev/video* devices exist
+    if ls /dev/video* 1> /dev/null 2>&1; then
+        echo -e "${GREEN}Success! Found the following camera(s):${NC}"
+        # List all video devices
+        ls -l /dev/video*
+    else
+        echo -e "${RED}Error: No cameras found.${NC}"
+        echo "Please ensure your webcam is plugged in."
+    fi
+}
+
 
 # --- MAIN MENU ---
 while true; do
@@ -175,10 +186,11 @@ while true; do
     echo -e "${GREEN}1.${NC} Install/Update Dependencies"
     echo -e "${GREEN}2.${NC} Start Stream"
     echo -e "${GREEN}3.${NC} Stop Stream"
-    echo -e "${YELLOW}4.${NC} Update This Script (from GitHub)"
-    echo -e "${RED}5.${NC} Exit"
+    echo -e "${CYAN}4.${NC} Check Camera"
+    echo -e "${YELLOW}5.${NC} Update This Script (from GitHub)"
+    echo -e "${RED}6.${NC} Exit"
     echo ""
-    echo -e "${YELLOW}Choose an option [1-5]:${NC}"
+    echo -e "${YELLOW}Choose an option [1-6]:${NC}"
     read -r choice
 
     case $choice in
@@ -191,10 +203,13 @@ while true; do
         3)
             stop_stream
             ;;
-        4. | 4)
+        4 | 4) # Renumbered from 4 to 5
+            check_camera
+            ;;
+        5 | 5) # Renumbered from 4 to 5
             self_update
             ;;
-        5)
+        6 | 6) # Renumbered from 5 to 6
             echo "Exiting."
             stop_stream # Ensure stream is stopped on exit
             exit 0
