@@ -74,20 +74,21 @@ start_stream() {
     PORT="5000"
     BITRATE="4000" # Bitrate is in kbit/s for x264enc (4000 = 4 Mbps)
     
-    # --- Plan C: Software Encoding (Failsafe) ---
-    # The hardware encoder (v4l2h264enc) on this Pi's Ubuntu
-    # setup is failing. We are falling back to the highly reliable
-    # software (CPU) encoder 'x264enc'. The Pi 4 can handle this.
+    # --- FINAL Pipeline: Software Encoding + 720p Scaling ---
+    # This pipeline scales the video down to 720p *before*
+    # encoding it with the CPU. This dramatically reduces the
+    # CPU load and will fix the "choppy" stream.
     
     echo -e "${GREEN}Starting CPU-based H.264 stream to $SERVER_IP:$PORT...${NC}"
-    echo -e "${CYAN}This will use more CPU but is very reliable. (ultrafast, zerolatency)${NC}"
+    echo -e "${CYAN}Downscaling to 720p to ensure smooth 30fps.${NC}"
     
     PIPELINE="gst-launch-1.0 -q fdsrc fd=0 \
         ! jpegparse \
         ! avdec_mjpeg \
         ! videoconvert \
+        ! videoscale \
         ! videorate \
-        ! capsfilter caps=\"video/x-raw,format=I420,framerate=30/1\" \
+        ! capsfilter caps=\"video/x-raw,format=I420,width=1280,height=720,framerate=30/1\" \
         ! x264enc speed-preset=ultrafast tune=zerolatency bitrate=$BITRATE \
         ! h264parse \
         ! rtph264pay config-interval=1 pt=96 \
