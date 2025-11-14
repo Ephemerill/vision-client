@@ -72,89 +72,29 @@ start_stream() {
 
     # --- Stream Configuration ---
     PORT="5000"
-    
-    # Option 2: Hardware H.264 (Recommended)
-    #
-    # --- NEW ROBUST PIPELINE ---
-    # We are adding 'videorate' and 'capsfilter' to create a stable,
-    # 30fps, I420-format video stream. The 'v4l2h264enc' hardware encoder
-    # is very picky, and this explicit format will fix the "Failed to process frame" error.
-    
     BITRATE="4000000" # 4 Mbps
+    
+    # --- Plan B: Force 720p scaling (High-Likelihood Fix) ---
+    # This pipeline forces a downscale to 1280x720 and the NV12
+    # format. This is the most common fix for v4l2 "Failed to process frame" errors.
+    
     echo -e "${GREEN}Starting HW-accelerated H.264 stream to $SERVER_IP:$PORT...${NC}"
-    echo -e "${CYAN}Bitrate set to ${BITRATE} bps. (Using Robust Pipeline)${NC}"
+    echo -e "${CYAN}Bitrate set to ${BITRATE} bps. (Forcing 720p/NV12 format)${NC}"
     
     PIPELINE="gst-launch-1.0 -q fdsrc fd=0 \
         ! jpegparse \
         ! avdec_mjpeg \
         ! videoconvert \
+        ! videoscale \
         ! videorate \
-        ! capsfilter caps=\"video/x-raw,format=I420,framerate=30/1\" \
+        ! capsfilter caps=\"video/x-raw,format=NV12,width=1280,height=720,framerate=30/1\" \
         ! v4l2h264enc extra-controls=\"controls,video_bitrate=$BITRATE;\" \
         ! h264parse \
         ! rtph264pay config-interval=1 pt=96 \
         ! udpsink host=$SERVER_IP port=$PORT"
 
     # --- Start the chosen pipeline ---
-    nohup bash -c "gphoto2 --stdout --capture-movie | $PIPELINE" > /tmp/streamer.log 2>&1 &
-    
-    echo $! > "$PID_FILE"
-    
-    sleep 2 
-    if ps -p $(cat $PID_FILE) > /dev/null; then
-        echo -e "${GREEN}Stream started successfully! (PID $(cat $PID_FILE))${NC}"
-        echo "Log available at /tmp/streamer.log"
-    else
-        echo -e "${RED}Error: Stream failed to start. Check log for details:${NC}"
-        cat /tmp/streamer.log
-        rm -f "$PID_FILE"
-    fi
-}
-
-    # --- Stream Configuration ---
-    PORT="5000"
-    
-    # --- CHOOSE YOUR PIPELINE ---
-    #
-    # Option 1: Tuned MJPEG (High Bandwidth, Low CPU, Low Latency)
-    # This adds a 'queue' to smooth out bursts from the camera and sets 'sync=false'
-    # to push data immediately, reducing sender-side stutter.
-    # Still suffers from high bandwidth and packet loss.
-    #
-    # PIPELINE="gst-launch-1.0 -q fdsrc fd=0 do-timestamp=true \
-    #     ! queue max-size-buffers=10 \
-    #     ! jpegparse \
-    #     ! rtpjpegpay pt=96 \
-    #     ! udpsink host=$SERVER_IP port=$PORT sync=false"
-    
-    # -------------------------------------------------------------------------
-    
-    # Option 2: Hardware H.264 (Recommended: Low Bandwidth, Low-ish CPU, ~0.5s Latency)
-    # This decodes the camera's MJPEG and *re-encodes* it using the Pi's
-    # dedicated H.264 hardware encoder. This is *dramatically* more
-    # bandwidth-efficient (e.g., 5 Mbps vs 200+ Mbps).
-    # This will solve network-based frame drops.
-    # The trade-off is a small increase in latency (~0.5s).
-    #
-    # NOTE: Your receiver.sh script MUST be changed to handle H.264.
-    # The receiver pipeline will be:
-    #   udpsrc port=5000 ! application/x-rtp, encoding-name=H264, payload=96 ! rtph264depay ! h264parse ! avdec_h264 ! ...
-    
-    BITRATE="4000000" # 4 Mbps
-    echo -e "${GREEN}Starting HW-accelerated H.264 stream to $SERVER_IP:$PORT...${NC}"
-    echo -e "${CYAN}Bitrate set to ${BITRATE} bps.${NC}"
-    
-    PIPELINE="gst-launch-1.0 -q fdsrc fd=0 \
-        ! jpegparse \
-        ! avdec_mjpeg \
-        ! videoconvert \
-        ! v4l2h264enc extra-controls=\"controls,video_bitrate=$BITRATE;\" \
-        ! h264parse \
-        ! rtph264pay config-interval=1 pt=96 \
-        ! udpsink host=$SERVER_IP port=$PORT"
-
-    # --- Start the chosen pipeline ---
-    nohup bash -c "gphoto2 --stdout --capture-movie | $PIPELINE" > /tmp/streamer.log 2>&1 &
+    nohup bash -c "gphoto2 --stdout --capture-movie | $PIPELINE" > /tmp/streamer.log 2S>&1 &
     
     echo $! > "$PID_FILE"
     
