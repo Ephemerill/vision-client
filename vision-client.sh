@@ -72,29 +72,29 @@ start_stream() {
 
     # --- Stream Configuration ---
     PORT="5000"
-    BITRATE="4000000" # 4 Mbps
+    BITRATE="4000" # Bitrate is in kbit/s for x264enc (4000 = 4 Mbps)
     
-    # --- Plan B: Force 720p scaling (High-Likelihood Fix) ---
-    # This pipeline forces a downscale to 1280x720 and the NV12
-    # format. This is the most common fix for v4l2 "Failed to process frame" errors.
+    # --- Plan C: Software Encoding (Failsafe) ---
+    # The hardware encoder (v4l2h264enc) on this Pi's Ubuntu
+    # setup is failing. We are falling back to the highly reliable
+    # software (CPU) encoder 'x264enc'. The Pi 4 can handle this.
     
-    echo -e "${GREEN}Starting HW-accelerated H.264 stream to $SERVER_IP:$PORT...${NC}"
-    echo -e "${CYAN}Bitrate set to ${BITRATE} bps. (Forcing 720p/NV12 format)${NC}"
+    echo -e "${GREEN}Starting CPU-based H.264 stream to $SERVER_IP:$PORT...${NC}"
+    echo -e "${CYAN}This will use more CPU but is very reliable. (ultrafast, zerolatency)${NC}"
     
     PIPELINE="gst-launch-1.0 -q fdsrc fd=0 \
         ! jpegparse \
         ! avdec_mjpeg \
         ! videoconvert \
-        ! videoscale \
         ! videorate \
-        ! capsfilter caps=\"video/x-raw,format=NV12,width=1280,height=720,framerate=30/1\" \
-        ! v4l2h264enc extra-controls=\"controls,video_bitrate=$BITRATE;\" \
+        ! capsfilter caps=\"video/x-raw,format=I420,framerate=30/1\" \
+        ! x264enc speed-preset=ultrafast tune=zerolatency bitrate=$BITRATE \
         ! h264parse \
         ! rtph264pay config-interval=1 pt=96 \
         ! udpsink host=$SERVER_IP port=$PORT"
 
     # --- Start the chosen pipeline ---
-    nohup bash -c "gphoto2 --stdout --capture-movie | $PIPELINE" > /tmp/streamer.log 2S>&1 &
+    nohup bash -c "gphoto2 --stdout --capture-movie | $PIPELINE" > /tmp/streamer.log 2>&1 &
     
     echo $! > "$PID_FILE"
     
