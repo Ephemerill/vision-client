@@ -23,7 +23,7 @@ show_header() {
     echo "   / _ \ / /_ / /__ __/ /_   / _ \/ /__"
     echo "  / ___// __// / -_) / __/  / ___/ / -_)"
     echo " /_/   \__//_/\__/\__\__/  /_/  /_/\__/"
-    echo "  ${PURPLE}Tailscale Webcam Streamer v2.0 (All-in-One)${NC}"
+    echo "  ${PURPLE}Tailscale Webcam Streamer v2.1 (Ubuntu Fix)${NC}"
     echo ""
 }
 
@@ -35,7 +35,8 @@ install_dependencies() {
     echo "This may take a few minutes."
     
     sudo apt-get update
-    sudo apt-get install -y git gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-omx-rpi gstreamer1.0-plugins-ugly
+    # --- FIX: Removed 'gstreamer1.0-omx-rpi' which is only for Raspberry Pi OS ---
+    sudo apt-get install -y git gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly
     
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}Dependencies installed successfully.${NC}"
@@ -61,9 +62,6 @@ start_stream() {
     fi
 
     # --- Stream Configuration ---
-    # High-res 1080p stream at 30fps.
-    # Bitrate is set to 6 Mbps (6000000), well within your 15 Mbps cap.
-    # This uses the Pi's hardware 'omxh264enc' encoder.
     PORT="5000"
     WIDTH=1920
     HEIGHT=1080
@@ -74,14 +72,11 @@ start_stream() {
     echo "Settings: ${WIDTH}x${HEIGHT} @ ${FRAMERATE}fps, Bitrate: $BITRATE"
 
     # GStreamer Pipeline
-    # - v4l2src: Captures from the webcam (device=/dev/video0)
-    # - omxh264enc: Uses the Pi's hardware H.264 encoder
-    # - rtph264pay: Packages the H.264 video into RTP packets
-    # - udpsink: Sends the packets to the server over UDP
+    # --- FIX: Changed 'omxh264enc' (RPi OS) to 'v4l2h264enc' (Ubuntu) ---
     nohup gst-launch-1.0 v4l2src device=/dev/video0 \
         ! "video/x-raw,width=$WIDTH,height=$HEIGHT,framerate=${FRAMERATE}/1" \
         ! videoconvert \
-        ! omxh264enc target-bitrate=$BITRATE control-rate=variable \
+        ! v4l2h264enc extra-controls="controls,video_bitrate=$BITRATE;" \
         ! "video/x-h264,profile=high" \
         ! h264parse \
         ! rtph264pay config-interval=1 pt=96 \
