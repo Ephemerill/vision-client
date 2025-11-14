@@ -21,7 +21,7 @@ show_header() {
     echo "   / _ \ / /_ / /__ __/ /_   / _ \/ /__"
     echo "  / ___// __// / -_) / __/  / ___/ / -_)"
     echo " /_/   \__//_/\__/\__\__/  /_/  /_/\__/"
-    echo "  ${PURPLE}Tailscale Webcam Streamer v2.8 (Payload Fix)${NC}"
+    echo "  ${PURPLE}Tailscale Webcam Streamer v2.10 (TCP Test)${NC}"
     echo ""
 }
 
@@ -29,12 +29,12 @@ show_header() {
 
 # 1. Install Dependencies
 install_dependencies() {
-    echo -e "${YELLOW}Installing dependencies (git, gstreamer, gphoto2)...${NC}"
+    echo -e "${YELLOW}Installing dependencies (git, gstreamer, gphoto2, netcat)...${NC}"
     echo "This may take a few minutes."
     
     sudo apt-get update
-    # gstreamer1.0-plugins-good is needed for rtpjpegpay
-    sudo apt-get install -y git gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav gphoto2 libgphoto2-6
+    # netcat-traditional is for the handshake test
+    sudo apt-get install -y git gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav gphoto2 libgphoto2-6 netcat-traditional
     
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}Dependencies installed successfully.${NC}"
@@ -65,17 +65,15 @@ start_stream() {
     echo -e "${GREEN}Starting stream from gphoto2 (EOS Camera) to $SERVER_IP:$PORT...${NC}"
     echo -e "${CYAN}Using ultra-lightweight MJPEG pass-through. No CPU encoding!${NC}"
 
-    # --- UPDATED: Added pt=96 (payload type) ---
-    # This explicitly sets the "channel" to 96
+    # --- MJPEG pipeline with pt=96 (payload type) ---
     nohup bash -c "gphoto2 --stdout --capture-movie | \
         gst-launch-1.0 -q fdsrc fd=0 \
         ! rtpjpegpay pt=96 \
         ! udpsink host=$SERVER_IP port=$PORT" > /tmp/streamer.log 2>&1 &
     
-    # Save the PID of the background process
     echo $! > "$PID_FILE"
     
-    sleep 2 # Give it a moment to start
+    sleep 2 
     if ps -p $(cat $PID_FILE) > /dev/null; then
         echo -e "${GREEN}Stream started successfully! (PID $(cat $PID_FILE))${NC}"
         echo "Log available at /tmp/streamer.log"
@@ -158,18 +156,51 @@ check_camera() {
     fi
 }
 
+# --- UPDATED FUNCTION ---
+# 6. Handshake Test
+handshake_test() {
+    if ! command -v nc &> /dev/null; then
+        echo -e "${RED}'nc' (netcat) not found. Run 'Install/Update Dependencies' first.${NC}"
+        return 1
+    fi
 
-# --- MAIN MENU ---
+    echo -e "${YELLOW}Enter your server's Tailscale IP address:${NC}"
+    read -r SERVER_IP
+
+    if [ -z "$SERVER_IP" ]; then
+        echo -e "${RED}No IP address entered. Aborting.${NC}"
+        return 1
+    fi
+
+    echo -e "${CYAN}Testing connection to $SERVER_IP on TCP port 8080 (the web receiver)...${NC}"
+    
+    # -z: zero-I/O mode (scan)
+    # -w 5: timeout after 5 seconds
+    nc -z -w 5 "$SERVER_IP" 8080
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}Success! Connection established.${NC}"
+        echo "This means the IP is correct and the receiver.sh script is running."
+    else
+        echo -e "${RED}Failure. Could not connect.${NC}"
+        echo "Check that 'receiver.sh' is running on your server."
+        echo "Also check firewalls on both devices for TCP port 8080."
+    fi
+}
+
+
+# --- MAIN MENU (Re-numbered) ---
 while true; do
     show_header
     echo -e "${GREEN}1.${NC} Install/Update Dependencies"
     echo -e "${GREEN}2.${NC} Start Stream"
     echo -e "${GREEN}3.${NC} Stop Stream"
     echo -e "${CYAN}4.${NC} Check Camera (gphoto2)"
-    echo -e "${YELLOW}5.${NC} Update This Script (from GitHub)"
-    echo -e "${RED}6.${NC} Exit"
+    echo -e "${BLUE}5.${NC} Run Handshake Test"
+    echo -e "${YELLOW}6.${NC} Update This Script (from GitHub)"
+    echo -e "${RED}7.${NC} Exit"
     echo ""
-    echo -e "${YELLOW}Choose an option [1-6]:${NC}"
+    echo -e "${YELLOW}Choose an option [1-7]:${NC}"
     read -r choice
 
     case $choice in
@@ -182,13 +213,16 @@ while true; do
         3)
             stop_stream
             ;;
-        4. | 4)
+        4)
             check_camera
             ;;
-        5. | 5)
+        5)
+            handshake_test
+            ;;
+        6)
             self_update
             ;;
-        6. | 6)
+        7)
             echo "Exiting."
             stop_stream
             exit 0
