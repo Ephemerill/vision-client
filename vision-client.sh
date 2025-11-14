@@ -15,6 +15,7 @@ NC='\033[0m' # No Color
 
 # --- ASCII ART ---
 show_header() {
+    tput rmam
     clear
     echo -e "${CYAN}"
     echo '$$\    $$\ $$\           $$\                            $$$$$$\  $$\ $$\                      $$\  '
@@ -28,6 +29,7 @@ show_header() {
     echo ""
     echo -e "  ${PURPLE}Big Brother Vision Client v0.13 (Parsing Logic)${NC}"
     echo ""
+    tput smam
 }
 
 # --- FUNCTIONS ---
