@@ -19,10 +19,9 @@ echo "Open index.html in your browser to start."
     echo -e "You will see GStreamer logs below when it connects." >&2
     echo -e "-----------------------------------------------------\n" >&2
 
-    # --- UPDATED: MJPEG Receive Pipeline ---
-    # This is much lighter. It just receives JPEG, depayloads it,
-    # and muxes it for the web. No decoding/re-encoding.
-    gst-launch-1.0 udpsrc port=5000 caps="application/x-rtp, encoding-name=JPEG, payload=26" \
+    # --- UPDATED: Changed payload from 26 to 96 ---
+    # This now listens explicitly on "channel" 96
+    gst-launch-1.0 udpsrc port=5000 caps="application/x-rtp, encoding-name=JPEG, payload=96" \
         ! rtpjpegdepay \
         ! multipartmux boundary="$BOUNDARY" \
         ! fdsink fd=1

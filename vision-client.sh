@@ -21,7 +21,7 @@ show_header() {
     echo "   / _ \ / /_ / /__ __/ /_   / _ \/ /__"
     echo "  / ___// __// / -_) / __/  / ___/ / -_)"
     echo " /_/   \__//_/\__/\__\__/  /_/  /_/\__/"
-    echo "  ${PURPLE}Tailscale Webcam Streamer v2.7 (MJPEG Direct)${NC}"
+    echo "  ${PURPLE}Tailscale Webcam Streamer v2.8 (Payload Fix)${NC}"
     echo ""
 }
 
@@ -65,15 +65,11 @@ start_stream() {
     echo -e "${GREEN}Starting stream from gphoto2 (EOS Camera) to $SERVER_IP:$PORT...${NC}"
     echo -e "${CYAN}Using ultra-lightweight MJPEG pass-through. No CPU encoding!${NC}"
 
-    # --- UPDATED: MJPEG pipeline ---
-    # This pipes the camera's native MJPEG stream directly to GStreamer.
-    # - gphoto2: Captures the movie stream (MJPEG) and sends to stdout.
-    # - fdsrc: GStreamer element that reads from a file descriptor (fd=0 is stdin).
-    # - rtpjpegpay: Packages the MJPEG video into RTP packets.
-    # - udpsink: Sends the packets to the server.
+    # --- UPDATED: Added pt=96 (payload type) ---
+    # This explicitly sets the "channel" to 96
     nohup bash -c "gphoto2 --stdout --capture-movie | \
         gst-launch-1.0 -q fdsrc fd=0 \
-        ! rtpjpegpay \
+        ! rtpjpegpay pt=96 \
         ! udpsink host=$SERVER_IP port=$PORT" > /tmp/streamer.log 2>&1 &
     
     # Save the PID of the background process
@@ -186,13 +182,13 @@ while true; do
         3)
             stop_stream
             ;;
-        4)
+        4. | 4)
             check_camera
             ;;
-        5)
+        5. | 5)
             self_update
             ;;
-        6)
+        6. | 6)
             echo "Exiting."
             stop_stream
             exit 0
