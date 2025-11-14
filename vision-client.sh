@@ -28,7 +28,7 @@ show_header() {
     echo '    \_/    \__|\_______/ \__| \______/ \__|  \__|       \______/ \__|\__| \_______|\__|  \__|  \____/    ⠀⠀⠈⠛⠿⠶⣶⡶⠿⠟⠉'
     echo ""
     tput smam
-    echo -e "  ${PURPLE}Big Brother Vision Client v0.13 (Parsing Logic)${NC}"
+    echo -e "  ${PURPLE}Big Brother Vision Client v0.14 (Formatting)${NC}"
     echo ""
 }
 
