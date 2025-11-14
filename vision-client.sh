@@ -73,6 +73,47 @@ start_stream() {
     # --- Stream Configuration ---
     PORT="5000"
     
+    # Option 2: Hardware H.264 (Recommended)
+    #
+    # --- NEW ROBUST PIPELINE ---
+    # We are adding 'videorate' and 'capsfilter' to create a stable,
+    # 30fps, I420-format video stream. The 'v4l2h264enc' hardware encoder
+    # is very picky, and this explicit format will fix the "Failed to process frame" error.
+    
+    BITRATE="4000000" # 4 Mbps
+    echo -e "${GREEN}Starting HW-accelerated H.264 stream to $SERVER_IP:$PORT...${NC}"
+    echo -e "${CYAN}Bitrate set to ${BITRATE} bps. (Using Robust Pipeline)${NC}"
+    
+    PIPELINE="gst-launch-1.0 -q fdsrc fd=0 \
+        ! jpegparse \
+        ! avdec_mjpeg \
+        ! videoconvert \
+        ! videorate \
+        ! capsfilter caps=\"video/x-raw,format=I420,framerate=30/1\" \
+        ! v4l2h264enc extra-controls=\"controls,video_bitrate=$BITRATE;\" \
+        ! h264parse \
+        ! rtph264pay config-interval=1 pt=96 \
+        ! udpsink host=$SERVER_IP port=$PORT"
+
+    # --- Start the chosen pipeline ---
+    nohup bash -c "gphoto2 --stdout --capture-movie | $PIPELINE" > /tmp/streamer.log 2>&1 &
+    
+    echo $! > "$PID_FILE"
+    
+    sleep 2 
+    if ps -p $(cat $PID_FILE) > /dev/null; then
+        echo -e "${GREEN}Stream started successfully! (PID $(cat $PID_FILE))${NC}"
+        echo "Log available at /tmp/streamer.log"
+    else
+        echo -e "${RED}Error: Stream failed to start. Check log for details:${NC}"
+        cat /tmp/streamer.log
+        rm -f "$PID_FILE"
+    fi
+}
+
+    # --- Stream Configuration ---
+    PORT="5000"
+    
     # --- CHOOSE YOUR PIPELINE ---
     #
     # Option 1: Tuned MJPEG (High Bandwidth, Low CPU, Low Latency)
@@ -311,7 +352,7 @@ while true; do
             echo "Exiting."
             stop_stream # Try to stop stream on exit
             exit 0
-            ;xx;
+            ;;
         *)
             echo -e "${RED}Invalid option. Please try again.${NC}"
             ;;

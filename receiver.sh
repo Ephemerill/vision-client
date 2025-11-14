@@ -1,8 +1,7 @@
 #!/bin/bash
 
-# This script receives the H.264 stream on port 5000,
-# decodes it, re-encodes it as MJPEG,
-# and serves it over HTTP on port 8080.
+# This script receives an H.264 stream on port 5000,
+# TRANSCODES it to MJPEG, and serves it over HTTP on port 8080.
 
 PORT="8080"
 BOUNDARY="--boundary"
@@ -16,9 +15,9 @@ if ! command -v ncat &> /dev/null; then
     exit 1
 fi
 
-echo "Starting PERSISTENT H.264 -> MJPEG transcoding receiver on http://0.0.0.0:$PORT"
+echo "Starting PERSISTENT H.264-to-MJPEG receiver on http://0.0.0.0:$PORT"
 
-# --- NEW: Wrap in a while true loop ---
+# --- Wrap in a while true loop ---
 while true
 do
     echo "Waiting for new client connection on port $PORT..." >&2
@@ -33,17 +32,15 @@ do
         echo -e "\n-----------------------------------------------------" >&2
         echo -e "Client connected! GStreamer is now active." >&2
         echo -e "Waiting for H.264 stream from Pi on UDP port 5000..." >&2
-        echo -e "You will see GStreamer logs below when it connects." >&2
+        echo -e "Transcoding to MJPEG..." >&2
         echo -e "-----------------------------------------------------\n" >&2
 
-        # --- UPDATED GStreamer Pipeline ---
-        # Receives H.264, decodes it, re-encodes as MJPEG, and serves it.
-        gst-launch-1.0 udpsrc port=5000 caps="application/x-rtp, encoding-name=H264, payload=96" \
+        # Start the GStreamer pipeline
+        # --- MODIFIED PIPELINE ---
+        gst-launch-1.0 udpsrc port=5000 caps="application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)H264, payload=(int)96" \
             ! rtph264depay \
-            ! h264parse \
             ! avdec_h264 \
-            ! videoconvert \
-            ! jpegenc quality=90 \
+            ! jpegenc \
             ! multipartmux boundary="$BOUNDARY" \
             ! fdsink fd=1
             
@@ -51,5 +48,5 @@ do
 
     echo "Client disconnected (Broken pipe is normal). GStreamer stopped." >&2
     echo "Looping to wait for next client." >&2
-    sleep 1 #
+    sleep 1
 done
