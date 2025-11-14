@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pi Stream</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: grid;
+            place-items: center;
+            min-height: 90vh;
+            background-color: #f0f0f0;
+            color: #333;
+            margin: 0;
+        }
+        .container {
+            width: 80%;
+            max-width: 1280px;
+        }
+        h1 {
+            text-align: center;
+            color: #555;
+        }
+        img {
+            width: 100%;
+            border-radius: 8px;
+            background-color: #000;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Raspberry Pi Live Stream</h1>
+        <!-- The browser will connect to the stream from receiver.sh -->
+        <img src="http://127.0.0.1:8080" alt="Live stream from Pi">
+    </div>
+</body>
+</html>

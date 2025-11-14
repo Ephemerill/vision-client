@@ -23,7 +23,7 @@ show_header() {
     echo "   / _ \ / /_ / /__ __/ /_   / _ \/ /__"
     echo "  / ___// __// / -_) / __/  / ___/ / -_)"
     echo " /_/   \__//_/\__/\__\__/  /_/  /_/\__/"
-    echo "  ${PURPLE}Tailscale Webcam Streamer v2.2 (Camera Check)${NC}"
+    echo "  ${PURPLE}Tailscale Webcam Streamer v2.3 (Camera Select)${NC}"
     echo ""
 }
 
@@ -53,6 +53,34 @@ start_stream() {
         return 1
     fi
 
+    # --- NEW: Camera Selection ---
+    echo -e "${YELLOW}Detecting cameras...${NC}"
+    local cameras
+    cameras=(/dev/video*)
+    
+    local CAMERA_DEVICE
+    
+    if [ ! -e "${cameras[0]}" ]; then
+        echo -e "${RED}Error: No cameras found (/dev/video*).${NC}"
+        echo "Please ensure your webcam is plugged in."
+        return 1
+    elif [ "${#cameras[@]}" -eq 1 ]; then
+        CAMERA_DEVICE="${cameras[0]}"
+        echo -e "${GREEN}One camera found: $CAMERA_DEVICE. Using it automatically.${NC}"
+    else
+        echo -e "${YELLOW}Multiple cameras found. Please choose one:${NC}"
+        select camera_choice in "${cameras[@]}"; do
+            if [[ -n "$camera_choice" ]]; then
+                CAMERA_DEVICE="$camera_choice"
+                echo -e "${GREEN}Using: $CAMERA_DEVICE${NC}"
+                break
+            else
+                echo -e "${RED}Invalid selection. Please try again.${NC}"
+            fi
+        done
+    fi
+    # --- End Camera Selection ---
+
     echo -e "${YELLOW}Enter your server's Tailscale IP address:${NC}"
     read -r SERVER_IP
 
@@ -68,11 +96,13 @@ start_stream() {
     FRAMERATE=30
     BITRATE=6000000 # 6 Mbps
 
-    echo -e "${GREEN}Starting stream to $SERVER_IP:$PORT...${NC}"
+    # --- UPDATED: Shows which camera is being used ---
+    echo -e "${GREEN}Starting stream from $CAMERA_DEVICE to $SERVER_IP:$PORT...${NC}"
     echo "Settings: ${WIDTH}x${HEIGHT} @ ${FRAMERATE}fps, Bitrate: $BITRATE"
 
     # GStreamer Pipeline for Ubuntu on Pi (v4l2h264enc)
-    nohup gst-launch-1.0 v4l2src device=/dev/video0 \
+    # --- UPDATED: Uses $CAMERA_DEVICE variable ---
+    nohup gst-launch-1.0 v4l2src device=$CAMERA_DEVICE \
         ! "video/x-raw,width=$WIDTH,height=$HEIGHT,framerate=${FRAMERATE}/1" \
         ! videoconvert \
         ! v4l2h264enc extra-controls="controls,video_bitrate=$BITRATE;" \
@@ -163,7 +193,6 @@ EOF
     exec ./updater.sh
 }
 
-# --- NEW FUNCTION ---
 # 5. Check Camera
 check_camera() {
     echo -e "${YELLOW}Checking for connected cameras...${NC}"
@@ -203,13 +232,13 @@ while true; do
         3)
             stop_stream
             ;;
-        4 | 4) # Renumbered from 4 to 5
+        4 | 4)
             check_camera
             ;;
-        5 | 5) # Renumbered from 4 to 5
+        5 | 5)
             self_update
             ;;
-        6 | 6) # Renumbered from 5 to 6
+        6 | 6)
             echo "Exiting."
             stop_stream # Ensure stream is stopped on exit
             exit 0
