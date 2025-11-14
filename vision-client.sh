@@ -21,7 +21,7 @@ show_header() {
     echo "   / _ \ / /_ / /__ __/ /_   / _ \/ /__"
     echo "  / ___// __// / -_) / __/  / ___/ / -_)"
     echo " /_/   \__//_/\__/\__\__/  /_/  /_/\__/"
-    echo "  ${PURPLE}Tailscale Webcam Streamer v2.6 (gphoto2)${NC}"
+    echo "  ${PURPLE}Tailscale Webcam Streamer v2.7 (MJPEG Direct)${NC}"
     echo ""
 }
 
@@ -33,7 +33,7 @@ install_dependencies() {
     echo "This may take a few minutes."
     
     sudo apt-get update
-    # --- UPDATED: Added gphoto2 and libgphoto2-6 ---
+    # gstreamer1.0-plugins-good is needed for rtpjpegpay
     sudo apt-get install -y git gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav gphoto2 libgphoto2-6
     
     if [ $? -eq 0 ]; then
@@ -63,19 +63,17 @@ start_stream() {
     PORT="5000"
 
     echo -e "${GREEN}Starting stream from gphoto2 (EOS Camera) to $SERVER_IP:$PORT...${NC}"
-    echo -e "${CYAN}This is now an ultra-lightweight stream! No software encoding.${NC}"
+    echo -e "${CYAN}Using ultra-lightweight MJPEG pass-through. No CPU encoding!${NC}"
 
-    # --- UPDATED: gphoto2 pipeline ---
-    # This pipes the camera's native H.264 stream directly to GStreamer.
-    # - gphoto2: Captures the movie stream and sends to stdout.
+    # --- UPDATED: MJPEG pipeline ---
+    # This pipes the camera's native MJPEG stream directly to GStreamer.
+    # - gphoto2: Captures the movie stream (MJPEG) and sends to stdout.
     # - fdsrc: GStreamer element that reads from a file descriptor (fd=0 is stdin).
-    # - h264parse: Parses the H.264 stream for network transmission.
-    # - rtph264pay: Packages the H.264 video into RTP packets.
+    # - rtpjpegpay: Packages the MJPEG video into RTP packets.
     # - udpsink: Sends the packets to the server.
     nohup bash -c "gphoto2 --stdout --capture-movie | \
         gst-launch-1.0 -q fdsrc fd=0 \
-        ! h264parse \
-        ! rtph264pay config-interval=1 pt=96 \
+        ! rtpjpegpay \
         ! udpsink host=$SERVER_IP port=$PORT" > /tmp/streamer.log 2>&1 &
     
     # Save the PID of the background process
@@ -102,7 +100,6 @@ stop_stream() {
     local pid=$(cat "$PID_FILE")
     echo "Stopping stream (PID $pid)..."
     
-    # Kill the process
     if kill "$pid" 2>/dev/null; then
         rm -f "$PID_FILE"
         echo -e "${GREEN}Stream stopped.${NC}"
@@ -147,8 +144,7 @@ EOF
     exec ./updater.sh
 }
 
-# --- UPDATED: Now uses gphoto2 ---
-# 5. Check Camera
+# 5. Check Camera (gphoto2)
 check_camera() {
     if ! command -v gphoto2 &> /dev/null; then
         echo -e "${RED}'gphoto2' not found. Run 'Install/Update Dependencies' first.${NC}"
@@ -161,13 +157,13 @@ check_camera() {
         echo -e "${GREEN}Success! Found the following camera(s):${NC}"
         gphoto2 --auto-detect
     else
-        echo -e "${RED}Error: No gphoto2 cameras found.${NC}"
-        echo "Please ensure your EOS camera is plugged in and set to movie mode."
+        echo -e "${RED}Warning: 'gphoto2 --auto-detect' found no camera.${NC}"
+        echo -e "${YELLOW}This is common. If your manual command works, the stream will work.${NC}"
     fi
 }
 
 
-# --- MAIN MENU (Re-numbered) ---
+# --- MAIN MENU ---
 while true; do
     show_header
     echo -e "${GREEN}1.${NC} Install/Update Dependencies"
@@ -204,7 +200,7 @@ while true; do
         *)
             echo -e "${RED}Invalid option. Please try again.${NC}"
             ;;
-    ac
+    esac
     echo ""
     echo "Press Enter to return to the menu..."
     read -r
