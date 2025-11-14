@@ -28,7 +28,7 @@ show_header() {
     echo '    \_/    \__|\_______/ \__| \______/ \__|  \__|       \______/ \__|\__| \_______|\__|  \__|  \____/    ⠀⠀⠈⠛⠿⠶⣶⡶⠿⠟⠉'
     echo ""
     tput smam
-    echo -e "  ${PURPLE}Big Brother Vision Client v0.14 (Formatting)${NC}"
+    echo -e "  ${PURPLE}Big Brother Vision Client v0.15 (Optimized)${NC}"
     echo ""
 }
 
@@ -36,12 +36,16 @@ show_header() {
 
 # 1. Install Dependencies
 install_dependencies() {
-    echo -e "${YELLOW}Installing dependencies (git, gstreamer, gphoto2, netcat)...${NC}"
+    echo -e "${YELLOW}Installing dependencies...${NC}"
     echo "This may take a few minutes."
     
     sudo apt-get update
     # netcat-traditional is for the handshake test
-    sudo apt-get install -y git gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav gphoto2 libgphoto2-6 netcat-traditional
+    # gstreamer1.0-plugins-bad is for 'avdec_mjpeg' (fast MJPEG decoder)
+    # gstreamer1.0-v4l2-utils provides the 'v4l2h264enc' hardware encoder
+    sudo apt-get install -y git gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+        gstreamer1.0-plugins-bad gstreamer1.0-libav gstreamer1.0-v4l2-utils \
+        gphoto2 libgphoto2-6 netcat-traditional
     
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}Dependencies installed successfully.${NC}"
@@ -68,16 +72,48 @@ start_stream() {
 
     # --- Stream Configuration ---
     PORT="5000"
-
-    echo -e "${GREEN}Starting stream from gphoto2 (EOS Camera) to $SERVER_IP:$PORT...${NC}"
-    echo -e "${CYAN}Using ultra-lightweight MJPEG pass-through. No CPU encoding!${NC}"
-
-    # --- MJPEG pipeline with 'jpegparse' fix ---
-    nohup bash -c "gphoto2 --stdout --capture-movie | \
-        gst-launch-1.0 -q fdsrc fd=0 \
+    
+    # --- CHOOSE YOUR PIPELINE ---
+    #
+    # Option 1: Tuned MJPEG (High Bandwidth, Low CPU, Low Latency)
+    # This adds a 'queue' to smooth out bursts from the camera and sets 'sync=false'
+    # to push data immediately, reducing sender-side stutter.
+    # Still suffers from high bandwidth and packet loss.
+    #
+    # PIPELINE="gst-launch-1.0 -q fdsrc fd=0 do-timestamp=true \
+    #     ! queue max-size-buffers=10 \
+    #     ! jpegparse \
+    #     ! rtpjpegpay pt=96 \
+    #     ! udpsink host=$SERVER_IP port=$PORT sync=false"
+    
+    # -------------------------------------------------------------------------
+    
+    # Option 2: Hardware H.264 (Recommended: Low Bandwidth, Low-ish CPU, ~0.5s Latency)
+    # This decodes the camera's MJPEG and *re-encodes* it using the Pi's
+    # dedicated H.264 hardware encoder. This is *dramatically* more
+    # bandwidth-efficient (e.g., 5 Mbps vs 200+ Mbps).
+    # This will solve network-based frame drops.
+    # The trade-off is a small increase in latency (~0.5s).
+    #
+    # NOTE: Your receiver.sh script MUST be changed to handle H.264.
+    # The receiver pipeline will be:
+    #   udpsrc port=5000 ! application/x-rtp, encoding-name=H264, payload=96 ! rtph264depay ! h264parse ! avdec_h264 ! ...
+    
+    BITRATE="4000000" # 4 Mbps
+    echo -e "${GREEN}Starting HW-accelerated H.264 stream to $SERVER_IP:$PORT...${NC}"
+    echo -e "${CYAN}Bitrate set to ${BITRATE} bps.${NC}"
+    
+    PIPELINE="gst-launch-1.0 -q fdsrc fd=0 \
         ! jpegparse \
-        ! rtpjpegpay pt=96 \
-        ! udpsink host=$SERVER_IP port=$PORT" > /tmp/streamer.log 2>&1 &
+        ! avdec_mjpeg \
+        ! videoconvert \
+        ! v4l2h264enc extra-controls=\"controls,video_bitrate=$BITRATE;\" \
+        ! h264parse \
+        ! rtph264pay config-interval=1 pt=96 \
+        ! udpsink host=$SERVER_IP port=$PORT"
+
+    # --- Start the chosen pipeline ---
+    nohup bash -c "gphoto2 --stdout --capture-movie | $PIPELINE" > /tmp/streamer.log 2>&1 &
     
     echo $! > "$PID_FILE"
     
@@ -102,7 +138,20 @@ stop_stream() {
     local pid=$(cat "$PID_FILE")
     echo "Stopping stream (PID $pid)..."
     
-    if kill "$pid" 2>/dev/null; then
+    # Kill the parent 'bash' process, which will also kill gphoto2 and gst-launch
+    if kill -TERM "$pid" 2>/dev/null; then
+        # Wait for process to disappear
+        timeout=5
+        while [ $timeout -gt 0 ] && ps -p $pid > /dev/null; do
+            sleep 0.1
+            ((timeout--))
+        done
+        
+        if ps -p $pid > /dev/null; then
+            echo -e "${YELLOW}Process $pid did not terminate gracefully, sending KILL...${NC}"
+            kill -KILL "$pid" 2>/dev/null
+        fi
+
         rm -f "$PID_FILE"
         echo -e "${GREEN}Stream stopped.${NC}"
     else
@@ -224,7 +273,7 @@ handshake_test_udp() {
 while true; do
     show_header
     echo -e "${GREEN}1.${NC} Install/Update Dependencies"
-    echo -e "${GREEN}2.${NC} Start Stream"
+    echo -e "${GREEN}2.${NC} Start Stream (H.264)"
     echo -e "${GREEN}3.${NC} Stop Stream"
     echo -e "${CYAN}4.${NC} Check Camera (gphoto2)"
     echo -e "${BLUE}5.${NC} Run TCP Handshake (Port 8080)"
@@ -260,9 +309,9 @@ while true; do
             ;;
         8)
             echo "Exiting."
-            stop_stream
+            stop_stream # Try to stop stream on exit
             exit 0
-            ;;
+            ;xx;
         *)
             echo -e "${RED}Invalid option. Please try again.${NC}"
             ;;
