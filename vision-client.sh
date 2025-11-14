@@ -17,11 +17,16 @@ NC='\033[0m' # No Color
 show_header() {
     clear
     echo -e "${CYAN}"
-    echo "    ___   __   __      __     ___  __  "
-    echo "   / _ \ / /_ / /__ __/ /_   / _ \/ /__"
-    echo "  / ___// __// / -_) / __/  / ___/ / -_)"
-    echo " /_/   \__//_/\__/\__\__/  /_/  /_/\__/"
-    echo "  ${PURPLE}Tailscale Webcam Streamer v2.12 (Parser Fix)${NC}"
+    echo '$$\    $$\ $$\           $$\                            $$$$$$\  $$\ $$\                      $$\  '
+    echo '$$ |   $$ |\__|          \__|                          $$  __$$\ $$ |\__|                     $$ |'
+    echo '$$ |   $$ |$$\  $$$$$$$\ $$\  $$$$$$\  $$$$$$$\        $$ /  \__|$$ |$$\  $$$$$$\  $$$$$$$\ $$$$$$\  '
+    echo '\$$\  $$  |$$ |$$  _____|$$ |$$  __$$\ $$  __$$\       $$ |      $$ |$$ |$$  __$$\ $$  __$$\\_$$  _| '
+    echo ' \$$\$$  / $$ |\$$$$$$\  $$ |$$ /  $$ |$$ |  $$ |      $$ |      $$ |$$ |$$$$$$$$ |$$ |  $$ | $$ |       ⠀⠀⠀⠀⢀⣴⠶⣶⡄⠀⠀⠀⠀'
+    echo '  \$$$  /  $$ | \____$$\ $$ |$$ |  $$ |$$ |  $$ |      $$ |  $$\ $$ |$$ |$$   ____|$$ |  $$ | $$ |$$\    ⢀⣴⣧⠀⠸⣿⣀⣸⡇⠀⢨⡦⣄'
+    echo '   \$  /   $$ |$$$$$$$  |$$ |\$$$$$$  |$$ |  $$ |      \$$$$$$  |$$ |$$ |\$$$$$$$\ $$ |  $$ | \$$$$  |   ⠘⣿⣿⣄⠀⠈⠛⠉⠀⣠⣾⡿⠋'
+    echo '    \_/    \__|\_______/ \__| \______/ \__|  \__|       \______/ \__|\__| \_______|\__|  \__|  \____/    ⠀⠀⠈⠛⠿⠶⣶⡶⠿⠟⠉'
+    echo ""
+    echo -e "  ${PURPLE}Big Brother Vision Client v0.13 (Parsing Logic)${NC}"
     echo ""
 }
 
@@ -65,8 +70,7 @@ start_stream() {
     echo -e "${GREEN}Starting stream from gphoto2 (EOS Camera) to $SERVER_IP:$PORT...${NC}"
     echo -e "${CYAN}Using ultra-lightweight MJPEG pass-through. No CPU encoding!${NC}"
 
-    # --- UPDATED: Added 'jpegparse' as suggested by the error log ---
-    # This identifies the stream as JPEG before payloading it.
+    # --- MJPEG pipeline with 'jpegparse' fix ---
     nohup bash -c "gphoto2 --stdout --capture-movie | \
         gst-launch-1.0 -q fdsrc fd=0 \
         ! jpegparse \
@@ -228,6 +232,7 @@ while true; do
     echo ""
     echo -e "${YELLOW}Choose an option [1-8]:${NC}"
     read -r choice
+    
 
     case $choice in
         1)
