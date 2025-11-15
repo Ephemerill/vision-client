@@ -37,7 +37,7 @@ show_header() {
     echo '    \_/    \__|\_______/ \__| \______/ \__|  \__|       \______/ \__|\__| \_______|\__|  \__|  \____/    ⠀⠀⠈⠛⠿⠶⣶⡶⠿⠟⠉'
     echo ""
     tput smam
-    echo -e "  ${PURPLE}Big Brother Vision Client v0.23 (RTSP H.264)${NC}"
+    echo -e "  ${PURPLE}Big Brother Vision Client v0.26 (RTSP H.264)${NC}"
     echo ""
 }
 
@@ -49,11 +49,8 @@ install_dependencies() {
     echo "This may take a few minutes."
     
     sudo apt-get update
-    # We need v4l-utils for 'v4l2-ctl' (replaces gphoto2 check)
-    # The 'v4l2h264enc' encoder is in the 'gstreamer1.0-plugins-good' package.
+    # We need v4l-utils for 'v4l2-ctl'
     # GStreamer plugins 'good' and 'bad' provide rtspclientsink and videoconvert.
-    
-    # --- THIS LINE IS THE FIX (v4l-utils) ---
     sudo apt-get install -y git gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
         gstreamer1.0-plugins-bad gstreamer1.0-libav v4l-utils \
         netcat-traditional
@@ -84,10 +81,6 @@ start_stream() {
     echo -e "${GREEN}Starting RTSP H.264 stream to rtsp://$SERVER_IP:$RTSP_PORT/$RTSP_PATH...${NC}"
     echo -e "${CYAN}Using Pi's hardware encoder for low-latency, high-quality stream.${NC}"
     
-    # --- THIS IS THE QUOTATION FIX ---
-    # We use single quotes for the 'extra-controls' property.
-    # $BITRATE will be expanded by 'bash -c' because the *entire*
-    # command is wrapped in double quotes for the 'nohup' command.
     PIPELINE="gst-launch-1.0 -v v4l2src device=$VIDEO_DEVICE \
         ! video/x-raw,width=$WIDTH,height=$HEIGHT,framerate=$FRAMERATE/1 \
         ! videoconvert \
@@ -98,8 +91,6 @@ start_stream() {
         ! rtspclientsink location=rtsp://$SERVER_IP:$RTSP_PORT/$RTSP_PATH"
 
     # --- Start the chosen pipeline ---
-    # We use 'bash -c' to correctly interpret the entire pipeline string,
-    # including its internal quotes and variable expansion.
     nohup bash -c "$PIPELINE" > /tmp/streamer.log 2>&1 &
     
     echo $! > "$PID_FILE"
@@ -234,6 +225,39 @@ test_rtsp_connection() {
     fi
 }
 
+# 7. Check GStreamer Plugin (DEBUG)
+check_gstreamer_plugin() {
+    if ! command -v gst-inspect-1.0 &> /dev/null; then
+        echo -e "${RED}'gst-inspect-1.0' not found. Run 'Install/Update Dependencies' first.${NC}"
+        return 1
+    fi
+
+    echo -e "${YELLOW}Checking GStreamer for 'rtspclientsink' plugin...${NC}"
+    
+    # First, clear the cache. This is the most common fix.
+    echo "Clearing GStreamer cache..."
+    rm -f ~/.cache/gstreamer-1.0/registry.*.bin
+    
+    echo "Now inspecting for the plugin..."
+    if gst-inspect-1.0 rtspclientsink > /dev/null 2>&1; then
+        echo -e "${GREEN}Success! 'rtspclientsink' plugin was found.${NC}"
+        echo "The stream should work now. Please try 'Start Stream' again."
+    else
+        echo -e "${RED}Failure: 'rtspclientsink' was NOT found.${NC}"
+        echo "This is strange. Let's check for the package that *provides* it."
+        
+        if gst-inspect-1.0 rtspsrc > /dev/null 2>&1; then
+            echo -e "${YELLOW}Info: 'rtspsrc' (for *receiving* RTSP) was found.${NC}"
+            echo "This confirms 'gstreamer1.0-plugins-good' is installed, but 'rtspclientsink' is missing."
+            echo "This might be a 'debian trixie' specific packaging issue."
+        else
+            echo -e "${RED}Critical Error: Even 'rtspsrc' is missing.${NC}"
+            echo "This means 'gstreamer1.0-plugins-good' is definitely not installed or not being read."
+            echo "Please run 'Install/Update Dependencies' again and watch for errors."
+        fi
+    fi
+}
+
 
 # --- MAIN MENU (Re-numbered) ---
 while true; do
@@ -244,9 +268,10 @@ while true; do
     echo -e "${CYAN}4.${NC} Check Camera (V4L2)"
     echo -e "${BLUE}5.${NC} Test RTSP Server Connection (TCP $RTSP_PORT)"
     echo -e "${YELLOW}6.${NC} Update This Script (from GitHub)"
-    echo -e "${RED}7.${NC} Exit"
+    echo -e "${PURPLE}7.${NC} Check GStreamer Plugin (Debug)"
+    echo -e "${RED}8.${NC} Exit"
     echo ""
-    echo -e "${YELLOW}Choose an option [1-7]:${NC}"
+    echo -e "${YELLOW}Choose an option [1-8]:${NC}"
     read -r choice
     
 
@@ -272,6 +297,9 @@ while true; do
             self_update
             ;;
         7)
+            check_gstreamer_plugin
+            ;;
+        8)
             echo "Exiting."
             stop_stream # Try to stop stream on exit
             exit 0
