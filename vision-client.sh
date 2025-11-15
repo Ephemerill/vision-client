@@ -37,7 +37,7 @@ show_header() {
     echo '    \_/    \__|\_______/ \__| \______/ \__|  \__|       \______/ \__|\__| \_______|\__|  \__|  \____/    ⠀⠀⠈⠛⠿⠶⣶⡶⠿⠟⠉'
     echo ""
     tput smam
-    echo -e "  ${PURPLE}Big Brother Vision Client v0.30 (RTSP H.264)${NC}"
+    echo -e "  ${PURPLE}Big Brother Vision Client v0.31 (RTSP H.264)${NC}"
     echo ""
 }
 
@@ -80,16 +80,30 @@ start_stream() {
     echo -e "${GREEN}Starting RTSP H.264 stream to rtsp://$SERVER_IP:$RTSP_PORT/$RTSP_PATH...${NC}"
     echo -e "${CYAN}Using Pi's hardware encoder for low-latency, high-quality stream.${NC}"
     
-    # --- THIS IS THE PIPELINE FIX (v0.30) ---
-    # We now request 'image/jpeg' from the 4K capture card,
-    # then decode it with 'jpegdec' before hardware encoding.
+    # --- THIS IS THE PIPELINE FIX (v0.31) ---
+    # We now request 'video/x-raw' with format 'NV12', which your card supports.
+    # **THIS REQUIRES YOUR CAMERA'S HDMI OUTPUT TO BE SET TO 1080p 30fps!**
     PIPELINE="gst-launch-1.0 -v v4l2src device=$VIDEO_DEVICE \
-        ! image/jpeg,width=$WIDTH,height=$HEIGHT,framerate=$FRAMERATE/1 \
-        ! jpegdec \
+        ! 'video/x-raw,format=NV12,width=$WIDTH,height=$HEIGHT,framerate=$FRAMERATE/1' \
         ! videoconvert \
         ! v4l2h264enc extra-controls=\"controls,video_bitrate=$BITRATE\" \
         ! 'video/x-h264,stream-format=byte-stream,alignment=au' \
         ! rtspclientsink location=rtsp://$SERVER_IP:$RTSP_PORT/$RTSP_PATH"
+
+    # --- 4K DOWNSCALING PIPELINE (Solution B - High CPU, use if you can't change camera output) ---
+    # This pipeline reads the 4K@24fps stream and scales it.
+    # To use this, comment out the pipeline above and uncomment this one.
+    # Note: 23.98fps is 24000/1001
+    #
+    # PIPELINE="gst-launch-1.0 -v v4l2src device=$VIDEO_DEVICE \
+    #     ! 'video/x-raw,format=NV12,width=3840,height=2160,framerate=24000/1001' \
+    #     ! videoscale \
+    #     ! 'video/x-raw,width=$WIDTH,height=$HEIGHT' \
+    #     ! videoconvert \
+    #     ! v4l2h264enc extra-controls=\"controls,video_bitrate=$BITRATE\" \
+    #     ! 'video/x-h264,stream-format=byte-stream,alignment=au' \
+    #     ! rtspclientsink location=rtsp://$SERVER_IP:$RTSP_PORT/$RTSP_PATH"
+
 
     # --- Start the chosen pipeline ---
     nohup bash -c "$PIPELINE" > /tmp/streamer.log 2>&1 &
@@ -259,7 +273,7 @@ check_gstreamer_plugin() {
     fi
 }
 
-# 8. List Camera Formats (NEW DEBUG OPTION)
+# 8. List Camera Formats (DEBUG)
 list_camera_formats() {
     if ! command -v v4l2-ctl &> /dev/null; then
         echo -e "${RED}'v4l2-ctl' not found. Run 'Install/Update Dependencies' first.${NC}"
