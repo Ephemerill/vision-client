@@ -37,7 +37,7 @@ show_header() {
     echo '    \_/    \__|\_______/ \__| \______/ \__|  \__|       \______/ \__|\__| \_______|\__|  \__|  \____/    ⠀⠀⠈⠛⠿⠶⣶⡶⠿⠟⠉'
     echo ""
     tput smam
-    echo -e "  ${PURPLE}Big Brother Vision Client v0.20 (RTSP H.264)${NC}"
+    echo -e "  ${PURPLE}Big Brother Vision Client v0.21 (RTSP H.264)${NC}"
     echo ""
 }
 
@@ -50,10 +50,12 @@ install_dependencies() {
     
     sudo apt-get update
     # We need v4l2-utils for 'v4l2-ctl' (replaces gphoto2 check)
-    # and the hardware encoder 'v4l2h264enc'.
+    # The 'v4l2h264enc' encoder is in the 'gstreamer1.0-plugins-good' package.
     # GStreamer plugins 'good' and 'bad' provide rtspclientsink and videoconvert.
+    
+    # --- THIS LINE IS THE FIX ---
     sudo apt-get install -y git gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
-        gstreamer1.0-plugins-bad gstreamer1.0-libav gstreamer1.0-v4l2-utils \
+        gstreamer1.0-plugins-bad gstreamer1.0-libav v4l2-utils \
         netcat-traditional
     
     if [ $? -eq 0 ]; then
