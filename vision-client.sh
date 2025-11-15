@@ -31,7 +31,44 @@ show_header() {
     echo '$$ |   $$ |\__|          \__|                          $$  __$$\ $$ |\__|                     $$ |'
     echo '$$ |   $$ |$$\  $$$$$$$\ $$\  $$$$$$\  $$$$$$$\        $$ /  \__|$$ |$$\  $$$$$$\  $$$$$$$\ $$$$$$\  '
     echo '\$$\  $$  |$$ |$$  _____|$$ |$$  __$$\ $$  __$$\       $$ |      $$ |$$ |$$  __$$\ $$  __$$\\_$$  _| '
-    echo ' \$$\$$  / $$ |\$$$$$$\  $$ |$$ /  $$ |$$ |  $$ |      $$ |      $$ |$$ |$$$$$$$$ |$$ |  $$ | $$ |       ⠀⠀⠀⠀⢀⣴a:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:Stream is already running (PID $(cat $PID_FILE)).${NC}"
+    echo ' \$$\$$  / $$ |\$$$$$$\  $$ |$$ /  $$ |$$ |  $$ |      $$ |      $$ |$$ |$$$$$$$$ |$$ |  $$ | $$ |       ⠀⠀⠀⠀⢀⣴⠶⣶⡄⠀⠀⠀⠀'
+    echo '  \$$$  /  $$ | \____$$\ $$ |$$ |  $$ |$$ |  $$ |      $$ |  $$\ $$ |$$ |$$   ____|$$ |  $$ | $$ |$$\    ⢀⣴⣧⠀⠸⣿⣀⣸⡇⠀⢨⡦⣄'
+    echo '   \$  /   $$ |$$$$$$$  |$$ |\$$$$$$  |$$ |  $$ |      \$$$$$$  |$$ |$$ |\$$$$$$$\ $$ |  $$ | \$$$$  |   ⠘⣿⣿⣄⠀⠈⠛⠉⠀⣠⣾⡿⠋'
+    echo '    \_/    \__|\_______/ \__| \______/ \__|  \__|       \______/ \__|\__| \_______|\__|  \__|  \____/    ⠀⠀⠈⠛⠿⠶⣶⡶⠿⠟⠉'
+    echo ""
+    tput smam
+    echo -e "  ${PURPLE}Big Brother Vision Client v0.23 (RTSP H.264)${NC}"
+    echo ""
+}
+
+# --- FUNCTIONS ---
+
+# 1. Install Dependencies
+install_dependencies() {
+    echo -e "${YELLOW}Installing dependencies...${NC}"
+    echo "This may take a few minutes."
+    
+    sudo apt-get update
+    # We need v4l-utils for 'v4l2-ctl' (replaces gphoto2 check)
+    # The 'v4l2h264enc' encoder is in the 'gstreamer1.0-plugins-good' package.
+    # GStreamer plugins 'good' and 'bad' provide rtspclientsink and videoconvert.
+    
+    # --- THIS LINE IS THE FIX (v4l-utils) ---
+    sudo apt-get install -y git gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+        gstreamer1.0-plugins-bad gstreamer1.0-libav v4l-utils \
+        netcat-traditional
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}Dependencies installed successfully.${NC}"
+    else
+        echo -e "${RED}Error: Dependency installation failed.${NC}"
+    fi
+}
+
+# 2. Start Stream
+start_stream() {
+    if [ -f "$PID_FILE" ]; then
+        echo -e "${YELLOW}Stream is already running (PID $(cat $PID_FILE)).${NC}"
         echo "Please stop it first."
         return 1
     fi
@@ -47,18 +84,22 @@ show_header() {
     echo -e "${GREEN}Starting RTSP H.264 stream to rtsp://$SERVER_IP:$RTSP_PORT/$RTSP_PATH...${NC}"
     echo -e "${CYAN}Using Pi's hardware encoder for low-latency, high-quality stream.${NC}"
     
-    # This pipeline uses the Pi 4's hardware H.264 encoder (v4l2h264enc)
-    # for maximum performance and to prevent dropped frames.
+    # --- THIS IS THE QUOTATION FIX ---
+    # We use single quotes for the 'extra-controls' property.
+    # $BITRATE will be expanded by 'bash -c' because the *entire*
+    # command is wrapped in double quotes for the 'nohup' command.
     PIPELINE="gst-launch-1.0 -v v4l2src device=$VIDEO_DEVICE \
         ! video/x-raw,width=$WIDTH,height=$HEIGHT,framerate=$FRAMERATE/1 \
         ! videoconvert \
-        ! v4l2h264enc extra-controls=\"controls,video_bitrate=$BITRATE\" \
+        ! v4l2h264enc extra-controls='controls,video_bitrate=$BITRATE' \
         ! 'video/x-h264,stream-format=byte-stream,alignment=au,profile=high' \
         ! h264parse \
         ! rtph264pay config-interval=1 pt=96 \
         ! rtspclientsink location=rtsp://$SERVER_IP:$RTSP_PORT/$RTSP_PATH"
 
     # --- Start the chosen pipeline ---
+    # We use 'bash -c' to correctly interpret the entire pipeline string,
+    # including its internal quotes and variable expansion.
     nohup bash -c "$PIPELINE" > /tmp/streamer.log 2>&1 &
     
     echo $! > "$PID_FILE"
