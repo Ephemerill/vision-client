@@ -37,7 +37,7 @@ show_header() {
     echo '    \_/    \__|\_______/ \__| \______/ \__|  \__|       \______/ \__|\__| \_______|\__|  \__|  \____/    ⠀⠀⠈⠛⠿⠶⣶⡶⠿⠟⠉'
     echo ""
     tput smam
-    echo -e "  ${PURPLE}Big Brother Vision Client v0.29 (RTSP H.264)${NC}"
+    echo -e "  ${PURPLE}Big Brother Vision Client v0.30 (RTSP H.264)${NC}"
     echo ""
 }
 
@@ -80,11 +80,12 @@ start_stream() {
     echo -e "${GREEN}Starting RTSP H.264 stream to rtsp://$SERVER_IP:$RTSP_PORT/$RTSP_PATH...${NC}"
     echo -e "${CYAN}Using Pi's hardware encoder for low-latency, high-quality stream.${NC}"
     
-    # --- THIS IS THE QUOTATION FIX ---
-    # We must use escaped double quotes (\") for the 'extra-controls' property.
-    # This allows the $BITRATE variable to be expanded correctly.
+    # --- THIS IS THE PIPELINE FIX (v0.30) ---
+    # We now request 'image/jpeg' from the 4K capture card,
+    # then decode it with 'jpegdec' before hardware encoding.
     PIPELINE="gst-launch-1.0 -v v4l2src device=$VIDEO_DEVICE \
-        ! video/x-raw,width=$WIDTH,height=$HEIGHT,framerate=$FRAMERATE/1 \
+        ! image/jpeg,width=$WIDTH,height=$HEIGHT,framerate=$FRAMERATE/1 \
+        ! jpegdec \
         ! videoconvert \
         ! v4l2h264enc extra-controls=\"controls,video_bitrate=$BITRATE\" \
         ! 'video/x-h264,stream-format=byte-stream,alignment=au' \
@@ -258,6 +259,21 @@ check_gstreamer_plugin() {
     fi
 }
 
+# 8. List Camera Formats (NEW DEBUG OPTION)
+list_camera_formats() {
+    if ! command -v v4l2-ctl &> /dev/null; then
+        echo -e "${RED}'v4l2-ctl' not found. Run 'Install/Update Dependencies' first.${NC}"
+        return 1
+    fi
+    
+    echo -e "${YELLOW}Listing all supported formats for $VIDEO_DEVICE...${NC}"
+    echo "This will show us exactly what the capture card can output."
+    
+    v4l2-ctl --list-formats-ext -d "$VIDEO_DEVICE"
+    
+    echo -e "${CYAN}Please copy the text above and send it for debugging.${NC}"
+}
+
 
 # --- MAIN MENU (Re-numbered) ---
 while true; do
@@ -269,9 +285,10 @@ while true; do
     echo -e "${BLUE}5.${NC} Test RTSP Server Connection (TCP $RTSP_PORT)"
     echo -e "${YELLOW}6.${NC} Update This Script (from GitHub)"
     echo -e "${PURPLE}7.${NC} Check GStreamer Plugin (Debug)"
-    echo -e "${RED}8.${NC} Exit"
+    echo -e "${PURPLE}8.${NC} List Camera Formats (Debug)"
+    echo -e "${RED}9.${NC} Exit"
     echo ""
-    echo -e "${YELLOW}Choose an option [1-8]:${NC}"
+    echo -e "${YELLOW}Choose an option [1-9]:${NC}"
     read -r choice
     
 
@@ -285,7 +302,7 @@ while true; do
         3)
             stop_stream
             ;;
-        4. | 5)
+        4 | 5)
             # Handle 4 and 5 which are now different
             if [ "$choice" = "4" ]; then
                 check_camera
@@ -300,6 +317,9 @@ while true; do
             check_gstreamer_plugin
             ;;
         8)
+            list_camera_formats
+            ;;
+        9)
             echo "Exiting."
             stop_stream # Try to stop stream on exit
             exit 0
