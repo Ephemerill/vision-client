@@ -8,7 +8,8 @@ GIT_BRANCH="main"
 VIDEO_DEVICE="/dev/video0" # Default for HDMI capture card
 WIDTH=1920
 HEIGHT=1080
-FRAMERATE=30
+# Note: Framerate is now hardcoded in the pipeline to match the camera's 59.94fps output.
+FRAMERATE=30 # This variable is no longer used by the main pipeline
 BITRATE=6000000 # 6 Mbps. Increase for higher quality, decrease if bandwidth is an issue.
 RTSP_PATH="mystream"
 RTSP_PORT="8554" # Default for mediamtx/rtsp-simple-server
@@ -37,7 +38,7 @@ show_header() {
     echo '    \_/    \__|\_______/ \__| \______/ \__|  \__|       \______/ \__|\__| \_______|\__|  \__|  \____/    ⠀⠀⠈⠛⠿⠶⣶⡶⠿⠟⠉'
     echo ""
     tput smam
-    echo -e "  ${PURPLE}Big Brother Vision Client v0.31 (RTSP H.264)${NC}"
+    echo -e "  ${PURPLE}Big Brother Vision Client v0.32 (RTSP H.264)${NC}"
     echo ""
 }
 
@@ -80,30 +81,15 @@ start_stream() {
     echo -e "${GREEN}Starting RTSP H.264 stream to rtsp://$SERVER_IP:$RTSP_PORT/$RTSP_PATH...${NC}"
     echo -e "${CYAN}Using Pi's hardware encoder for low-latency, high-quality stream.${NC}"
     
-    # --- THIS IS THE PIPELINE FIX (v0.31) ---
-    # We now request 'video/x-raw' with format 'NV12', which your card supports.
-    # **THIS REQUIRES YOUR CAMERA'S HDMI OUTPUT TO BE SET TO 1080p 30fps!**
+    # --- THIS IS THE PIPELINE FIX (v0.32) ---
+    # We now request 'video/x-raw' with format 'NV12' at the exact
+    # 59.940fps (60000/1001) that the camera is providing.
     PIPELINE="gst-launch-1.0 -v v4l2src device=$VIDEO_DEVICE \
-        ! 'video/x-raw,format=NV12,width=$WIDTH,height=$HEIGHT,framerate=$FRAMERATE/1' \
+        ! 'video/x-raw,format=NV12,width=1920,height=1080,framerate=60000/1001' \
         ! videoconvert \
         ! v4l2h264enc extra-controls=\"controls,video_bitrate=$BITRATE\" \
         ! 'video/x-h264,stream-format=byte-stream,alignment=au' \
         ! rtspclientsink location=rtsp://$SERVER_IP:$RTSP_PORT/$RTSP_PATH"
-
-    # --- 4K DOWNSCALING PIPELINE (Solution B - High CPU, use if you can't change camera output) ---
-    # This pipeline reads the 4K@24fps stream and scales it.
-    # To use this, comment out the pipeline above and uncomment this one.
-    # Note: 23.98fps is 24000/1001
-    #
-    # PIPELINE="gst-launch-1.0 -v v4l2src device=$VIDEO_DEVICE \
-    #     ! 'video/x-raw,format=NV12,width=3840,height=2160,framerate=24000/1001' \
-    #     ! videoscale \
-    #     ! 'video/x-raw,width=$WIDTH,height=$HEIGHT' \
-    #     ! videoconvert \
-    #     ! v4l2h264enc extra-controls=\"controls,video_bitrate=$BITRATE\" \
-    #     ! 'video/x-h264,stream-format=byte-stream,alignment=au' \
-    #     ! rtspclientsink location=rtsp://$SERVER_IP:$RTSP_PORT/$RTSP_PATH"
-
 
     # --- Start the chosen pipeline ---
     nohup bash -c "$PIPELINE" > /tmp/streamer.log 2>&1 &
@@ -295,7 +281,7 @@ while true; do
     echo -e "${GREEN}1.${NC} Install/Update Dependencies"
     echo -e "${GREEN}2.${NC} Start Stream (RTSP/H.264)"
     echo -e "${GREEN}3.${NC} Stop Stream"
-    echo -e "${CYAN}4.${NC} Check Camera (V4L2)"
+    echo -e "${CYAN}4.${NC} Check Camera (V42)"
     echo -e "${BLUE}5.${NC} Test RTSP Server Connection (TCP $RTSP_PORT)"
     echo -e "${YELLOW}6.${NC} Update This Script (from GitHub)"
     echo -e "${PURPLE}7.${NC} Check GStreamer Plugin (Debug)"
@@ -316,7 +302,7 @@ while true; do
         3)
             stop_stream
             ;;
-        4 | 5)
+        4. | 5)
             # Handle 4 and 5 which are now different
             if [ "$choice" = "4" ]; then
                 check_camera
