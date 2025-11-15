@@ -37,7 +37,7 @@ show_header() {
     echo '    \_/    \__|\_______/ \__| \______/ \__|  \__|       \______/ \__|\__| \_______|\__|  \__|  \____/    ⠀⠀⠈⠛⠿⠶⣶⡶⠿⠟⠉'
     echo ""
     tput smam
-    echo -e "  ${PURPLE}Big Brother Vision Client v0.33 (RTSP H.264)${NC}"
+    echo -e "  ${PURPLE}Big Brother Vision Client v0.34 (RTSP H.264)${NC}"
     echo ""
 }
 
@@ -80,12 +80,12 @@ start_stream() {
     echo -e "${GREEN}Starting RTSP H.264 stream to rtsp://$SERVER_IP:$RTSP_PORT/$RTSP_PATH...${NC}"
     echo -e "${CYAN}Using Pi's hardware encoder for low-latency, high-quality stream.${NC}"
     
-    # --- THIS IS THE PIPELINE FIX (v0.33) ---
-    # We now request 'video/x-raw' with format 'YUY2' (which is 'YUYV' 4:2:2)
-    # at the exact 59.940fps (60000/1001) that the camera is providing.
+    # --- THIS IS THE PIPELINE FIX (v0.34) ---
+    # We request 'NV12' format, which the camera supports AND the hardware
+    # encoder ('v4l2h264enc') accepts directly.
+    # This removes the problematic 'videoconvert' element entirely.
     PIPELINE="gst-launch-1.0 -v v4l2src device=$VIDEO_DEVICE \
-        ! 'video/x-raw,format=YUY2,width=1920,height=1080,framerate=60000/1001' \
-        ! videoconvert \
+        ! 'video/x-raw,format=NV12,width=1920,height=1080,framerate=60000/1001' \
         ! v4l2h264enc extra-controls=\"controls,video_bitrate=$BITRATE\" \
         ! 'video/x-h264,stream-format=byte-stream,alignment=au' \
         ! rtspclientsink location=rtsp://$SERVER_IP:$RTSP_PORT/$RTSP_PATH"
