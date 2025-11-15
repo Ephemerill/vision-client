@@ -31,44 +31,7 @@ show_header() {
     echo '$$ |   $$ |\__|          \__|                          $$  __$$\ $$ |\__|                     $$ |'
     echo '$$ |   $$ |$$\  $$$$$$$\ $$\  $$$$$$\  $$$$$$$\        $$ /  \__|$$ |$$\  $$$$$$\  $$$$$$$\ $$$$$$\  '
     echo '\$$\  $$  |$$ |$$  _____|$$ |$$  __$$\ $$  __$$\       $$ |      $$ |$$ |$$  __$$\ $$  __$$\\_$$  _| '
-    echo ' \$$\$$  / $$ |\$$$$$$\  $$ |$$ /  $$ |$$ |  $$ |      $$ |      $$ |$$ |$$$$$$$$ |$$ |  $$ | $$ |       ⠀⠀⠀⠀⢀⣴⠶⣶⡄⠀⠀⠀⠀'
-    echo '  \$$$  /  $$ | \____$$\ $$ |$$ |  $$ |$$ |  $$ |      $$ |  $$\ $$ |$$ |$$   ____|$$ |  $$ | $$ |$$\    ⢀⣴⣧⠀⠸⣿⣀⣸⡇⠀⢨⡦⣄'
-    echo '   \$  /   $$ |$$$$$$$  |$$ |\$$$$$$  |$$ |  $$ |      \$$$$$$  |$$ |$$ |\$$$$$$$\ $$ |  $$ | \$$$$  |   ⠘⣿⣿⣄⠀⠈⠛⠉⠀⣠⣾⡿⠋'
-    echo '    \_/    \__|\_______/ \__| \______/ \__|  \__|       \______/ \__|\__| \_______|\__|  \__|  \____/    ⠀⠀⠈⠛⠿⠶⣶⡶⠿⠟⠉'
-    echo ""
-    tput smam
-    echo -e "  ${PURPLE}Big Brother Vision Client v0.21 (RTSP H.264)${NC}"
-    echo ""
-}
-
-# --- FUNCTIONS ---
-
-# 1. Install Dependencies
-install_dependencies() {
-    echo -e "${YELLOW}Installing dependencies...${NC}"
-    echo "This may take a few minutes."
-    
-    sudo apt-get update
-    # We need v4l2-utils for 'v4l2-ctl' (replaces gphoto2 check)
-    # The 'v4l2h264enc' encoder is in the 'gstreamer1.0-plugins-good' package.
-    # GStreamer plugins 'good' and 'bad' provide rtspclientsink and videoconvert.
-    
-    # --- THIS LINE IS THE FIX ---
-    sudo apt-get install -y git gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
-        gstreamer1.0-plugins-bad gstreamer1.0-libav v4l2-utils \
-        netcat-traditional
-    
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}Dependencies installed successfully.${NC}"
-    else
-        echo -e "${RED}Error: Dependency installation failed.${NC}"
-    fi
-}
-
-# 2. Start Stream
-start_stream() {
-    if [ -f "$PID_FILE" ]; then
-        echo -e "${YELLOW}Stream is already running (PID $(cat $PID_FILE)).${NC}"
+    echo ' \$$\$$  / $$ |\$$$$$$\  $$ |$$ /  $$ |$$ |  $$ |      $$ |      $$ |$$ |$$$$$$$$ |$$ |  $$ | $$ |       ⠀⠀⠀⠀⢀⣴a:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:S:Stream is already running (PID $(cat $PID_FILE)).${NC}"
         echo "Please stop it first."
         return 1
     fi
