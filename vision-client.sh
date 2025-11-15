@@ -37,7 +37,7 @@ show_header() {
     echo '    \_/    \__|\_______/ \__| \______/ \__|  \__|       \______/ \__|\__| \_______|\__|  \__|  \____/    ⠀⠀⠈⠛⠿⠶⣶⡶⠿⠟⠉'
     echo ""
     tput smam
-    echo -e "  ${PURPLE}Big Brother Vision Client v0.27 (RTSP H.264)${NC}"
+    echo -e "  ${PURPLE}Big Brother Vision Client v0.29 (RTSP H.264)${NC}"
     echo ""
 }
 
@@ -49,9 +49,7 @@ install_dependencies() {
     echo "This may take a few minutes."
     
     sudo apt-get update
-    # --- THIS IS THE FIX ---
-    # Debian Trixie (13) split rtspclientsink into its own package.
-    # We must now install 'gstreamer1.0-rtsp' explicitly.
+    # Debian Trixie (13) split rtspclientsink into 'gstreamer1.0-rtsp'.
     sudo apt-get install -y git gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
         gstreamer1.0-plugins-bad gstreamer1.0-libav gstreamer1.0-rtsp \
         v4l-utils netcat-traditional
@@ -82,13 +80,14 @@ start_stream() {
     echo -e "${GREEN}Starting RTSP H.264 stream to rtsp://$SERVER_IP:$RTSP_PORT/$RTSP_PATH...${NC}"
     echo -e "${CYAN}Using Pi's hardware encoder for low-latency, high-quality stream.${NC}"
     
+    # --- THIS IS THE QUOTATION FIX ---
+    # We must use escaped double quotes (\") for the 'extra-controls' property.
+    # This allows the $BITRATE variable to be expanded correctly.
     PIPELINE="gst-launch-1.0 -v v4l2src device=$VIDEO_DEVICE \
         ! video/x-raw,width=$WIDTH,height=$HEIGHT,framerate=$FRAMERATE/1 \
         ! videoconvert \
-        ! v4l2h264enc extra-controls='controls,video_bitrate=$BITRATE' \
-        ! 'video/x-h264,stream-format=byte-stream,alignment=au,profile=high' \
-        ! h264parse \
-        ! rtph264pay config-interval=1 pt=96 \
+        ! v4l2h264enc extra-controls=\"controls,video_bitrate=$BITRATE\" \
+        ! 'video/x-h264,stream-format=byte-stream,alignment=au' \
         ! rtspclientsink location=rtsp://$SERVER_IP:$RTSP_PORT/$RTSP_PATH"
 
     # --- Start the chosen pipeline ---
@@ -249,11 +248,11 @@ check_gstreamer_plugin() {
         
         if gst-inspect-1.0 rtspsrc > /dev/null 2>&1; then
             echo -e "${YELLOW}Info: 'rtspsrc' (for *receiving* RTSP) was found.${NC}"
-            echo "This confirms 'gstreamer1.0-plugins-good' is installed, but 'rtspclientsink' is missing."
-            echo "This might be a 'debian trixie' specific packaging issue."
+            echo "This confirms 'gstreamer1.0-plugins-good' or 'base' is installed, but 'rtspclientsink' is missing."
+            echo "Please run 'Install/Update Dependencies' again and make sure 'gstreamer1.0-rtsp' installs."
         else
             echo -e "${RED}Critical Error: Even 'rtspsrc' is missing.${NC}"
-            echo "This means 'gstreamer1.0-plugins-good' is definitely not installed or not being read."
+            echo "This means GStreamer plugins are not installed or not being read."
             echo "Please run 'Install/Update Dependencies' again and watch for errors."
         fi
     fi
