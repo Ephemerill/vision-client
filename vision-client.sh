@@ -37,7 +37,7 @@ show_header() {
     echo '    \_/    \__|\_______/ \__| \______/ \__|  \__|       \______/ \__|\__| \_______|\__|  \__|  \____/    ⠀⠀⠈⠛⠿⠶⣶⡶⠿⠟⠉'
     echo ""
     tput smam
-    echo -e "  ${PURPLE}Big Brother Vision Client v0.26 (RTSP H.264)${NC}"
+    echo -e "  ${PURPLE}Big Brother Vision Client v0.27 (RTSP H.264)${NC}"
     echo ""
 }
 
@@ -49,11 +49,12 @@ install_dependencies() {
     echo "This may take a few minutes."
     
     sudo apt-get update
-    # We need v4l-utils for 'v4l2-ctl'
-    # GStreamer plugins 'good' and 'bad' provide rtspclientsink and videoconvert.
+    # --- THIS IS THE FIX ---
+    # Debian Trixie (13) split rtspclientsink into its own package.
+    # We must now install 'gstreamer1.0-rtsp' explicitly.
     sudo apt-get install -y git gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
-        gstreamer1.0-plugins-bad gstreamer1.0-libav v4l-utils \
-        netcat-traditional
+        gstreamer1.0-plugins-bad gstreamer1.0-libav gstreamer1.0-rtsp \
+        v4l-utils netcat-traditional
     
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}Dependencies installed successfully.${NC}"
