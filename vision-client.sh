@@ -4,6 +4,15 @@
 PID_FILE="/tmp/streamer.pid"
 GIT_BRANCH="main"
 
+# --- STREAM CONFIG (NEW) ---
+VIDEO_DEVICE="/dev/video0" # Default for HDMI capture card
+WIDTH=1920
+HEIGHT=1080
+FRAMERATE=30
+BITRATE=6000000 # 6 Mbps. Increase for higher quality, decrease if bandwidth is an issue.
+RTSP_PATH="mystream"
+RTSP_PORT="8554" # Default for mediamtx/rtsp-simple-server
+
 # --- COLORS ---
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -28,7 +37,7 @@ show_header() {
     echo '    \_/    \__|\_______/ \__| \______/ \__|  \__|       \______/ \__|\__| \_______|\__|  \__|  \____/    ⠀⠀⠈⠛⠿⠶⣶⡶⠿⠟⠉'
     echo ""
     tput smam
-    echo -e "  ${PURPLE}Big Brother Vision Client v0.15 (Optimized)${NC}"
+    echo -e "  ${PURPLE}Big Brother Vision Client v0.20 (RTSP H.264)${NC}"
     echo ""
 }
 
@@ -40,12 +49,12 @@ install_dependencies() {
     echo "This may take a few minutes."
     
     sudo apt-get update
-    # netcat-traditional is for the handshake test
-    # gstreamer1.0-plugins-bad is for 'avdec_mjpeg' (fast MJPEG decoder)
-    # gstreamer1.0-v4l2-utils provides the 'v4l2h264enc' hardware encoder
+    # We need v4l2-utils for 'v4l2-ctl' (replaces gphoto2 check)
+    # and the hardware encoder 'v4l2h264enc'.
+    # GStreamer plugins 'good' and 'bad' provide rtspclientsink and videoconvert.
     sudo apt-get install -y git gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
         gstreamer1.0-plugins-bad gstreamer1.0-libav gstreamer1.0-v4l2-utils \
-        gphoto2 libgphoto2-6 netcat-traditional
+        netcat-traditional
     
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}Dependencies installed successfully.${NC}"
@@ -62,38 +71,30 @@ start_stream() {
         return 1
     fi
 
-    echo -e "${YELLOW}Enter your server's Tailscale IP address:${NC}"
+    echo -e "${YELLOW}Enter your server's (Mac's) Tailscale IP address:${NC}"
     read -r SERVER_IP
 
     if [ -z "$SERVER_IP" ]; then
         echo -e "${RED}No IP address entered. Aborting.${NC}"
         return 1
     fi
-
-    # --- Stream Configuration ---
-    PORT="5000"
     
-    # --- FINAL PLAN: 720p MJPEG Stream ---
-    # We are giving up on H.264. It's a buggy-driver-and-stuttery-mess.
-    # We are going back to your ORIGINAL low-latency MJPEG pipeline,
-    # but we will scale to 720p on the Pi to fix the bandwidth.
-    # 'jpegenc' is *much* faster than 'x264enc'.
+    echo -e "${GREEN}Starting RTSP H.264 stream to rtsp://$SERVER_IP:$RTSP_PORT/$RTSP_PATH...${NC}"
+    echo -e "${CYAN}Using Pi's hardware encoder for low-latency, high-quality stream.${NC}"
     
-    echo -e "${GREEN}Starting 720p MJPEG stream to $SERVER_IP:$PORT...${NC}"
-    echo -e "${CYAN}This is low-latency and fixes the bandwidth problem.${NC}"
-    
-    PIPELINE="gst-launch-1.0 -q fdsrc fd=0 \
-        ! jpegparse \
-        ! avdec_mjpeg \
+    # This pipeline uses the Pi 4's hardware H.264 encoder (v4l2h264enc)
+    # for maximum performance and to prevent dropped frames.
+    PIPELINE="gst-launch-1.0 -v v4l2src device=$VIDEO_DEVICE \
+        ! video/x-raw,width=$WIDTH,height=$HEIGHT,framerate=$FRAMERATE/1 \
         ! videoconvert \
-        ! videoscale \
-        ! capsfilter caps=\"video/x-raw,width=1280,height=720\" \
-        ! jpegenc quality=90 \
-        ! rtpjpegpay pt=96 \
-        ! udpsink host=$SERVER_IP port=$PORT"
+        ! v4l2h264enc extra-controls=\"controls,video_bitrate=$BITRATE\" \
+        ! 'video/x-h264,stream-format=byte-stream,alignment=au,profile=high' \
+        ! h264parse \
+        ! rtph264pay config-interval=1 pt=96 \
+        ! rtspclientsink location=rtsp://$SERVER_IP:$RTSP_PORT/$RTSP_PATH"
 
     # --- Start the chosen pipeline ---
-    nohup bash -c "gphoto2 --stdout --capture-movie | $PIPELINE" > /tmp/streamer.log 2>&1 &
+    nohup bash -c "$PIPELINE" > /tmp/streamer.log 2>&1 &
     
     echo $! > "$PID_FILE"
     
@@ -101,6 +102,7 @@ start_stream() {
     if ps -p $(cat $PID_FILE) > /dev/null; then
         echo -e "${GREEN}Stream started successfully! (PID $(cat $PID_FILE))${NC}"
         echo "Log available at /tmp/streamer.log"
+        echo -e "${YELLOW}View the stream at: rtsp://$SERVER_IP:$RTSP_PORT/$RTSP_PATH${NC}"
     else
         echo -e "${RED}Error: Stream failed to start. Check log for details:${NC}"
         cat /tmp/streamer.log
@@ -118,7 +120,7 @@ stop_stream() {
     local pid=$(cat "$PID_FILE")
     echo "Stopping stream (PID $pid)..."
     
-    # Kill the parent 'bash' process, which will also kill gphoto2 and gst-launch
+    # Kill the parent 'bash' process, which will also kill gst-launch
     if kill -TERM "$pid" 2>/dev/null; then
         # Wait for process to disappear
         timeout=5
@@ -175,32 +177,37 @@ EOF
     exec ./updater.sh
 }
 
-# 5. Check Camera (gphoto2)
+# 5. Check Camera (V4L2)
 check_camera() {
-    if ! command -v gphoto2 &> /dev/null; then
-        echo -e "${RED}'gphoto2' not found. Run 'Install/Update Dependencies' first.${NC}"
+    if ! command -v v4l2-ctl &> /dev/null; then
+        echo -e "${RED}'v4l2-ctl' not found. Run 'Install/Update Dependencies' first.${NC}"
         return 1
     fi
 
-    echo -e "${YELLOW}Checking for gphoto2-compatible cameras...${NC}"
+    echo -e "${YELLOW}Checking for V4L2 devices (capture cards / webcams)...${NC}"
     
-    if gphoto2 --auto-detect | grep -q "Canon"; then
-        echo -e "${GREEN}Success! Found the following camera(s):${NC}"
-        gphoto2 --auto-detect
+    local devices
+    devices=$(v4l2-ctl --list-devices)
+    
+    if [ -z "$devices" ]; then
+        echo -e "${RED}Error: No V4L2 devices found.${NC}"
+        echo "Is the HDMI capture card plugged in and powered on?"
     else
-        echo -e "${RED}Warning: 'gphoto2 --auto-detect' found no camera.${NC}"
-        echo -e "${YELLOW}This is common. If your manual command works, the stream will work.${NC}"
+        echo -e "${GREEN}Success! Found the following device(s):${NC}"
+        echo "$devices"
+        echo -e "${CYAN}The script is configured to use '$VIDEO_DEVICE'.${NC}"
+        echo "If this is incorrect, please edit the VIDEO_DEVICE variable at the top of the script."
     fi
 }
 
-# 6. Handshake Test (TCP)
-handshake_test_tcp() {
+# 6. Test RTSP Server Connection (TCP)
+test_rtsp_connection() {
     if ! command -v nc &> /dev/null; then
         echo -e "${RED}'nc' (netcat) not found. Run 'Install/Update Dependencies' first.${NC}"
         return 1
     fi
 
-    echo -e "${YELLOW}Enter your server's Tailscale IP address:${NC}"
+    echo -e "${YELLOW}Enter your server's (Mac's) Tailscale IP address:${NC}"
     read -r SERVER_IP
 
     if [ -z "$SERVER_IP" ]; then
@@ -208,44 +215,17 @@ handshake_test_tcp() {
         return 1
     fi
 
-    echo -e "${CYAN}Testing connection to $SERVER_IP on TCP port 8080 (the web receiver)...${NC}"
+    echo -e "${CYAN}Testing connection to $SERVER_IP on TCP port $RTSP_PORT (the RTSP server port)...${NC}"
     
-    nc -z -w 5 "$SERVER_IP" 8080
+    nc -z -w 5 "$SERVER_IP" "$RTSP_PORT"
     
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}Success! Connection established.${NC}"
-        echo "This means the IP is correct and the receiver.sh script is running."
+        echo "This means the IP is correct and the 'mediamtx' server is running."
     else
         echo -e "${RED}Failure. Could not connect.${NC}"
-        echo "Check that 'receiver.sh' is running AND index.html is open in a browser."
+        echo "Check that 'mediamtx' is running on your Mac and not blocked by a firewall."
     fi
-}
-
-# 7. Handshake Test (UDP)
-handshake_test_udp() {
-    if ! command -v nc &> /dev/null; then
-        echo -e "${RED}'nc' (netcat) not found. Run 'Install/Update Dependencies' first.${NC}"
-        return 1
-    fi
-
-    echo -e "${YELLOW}Enter your server's Tailscale IP address:${NC}"
-    read -r SERVER_IP
-
-    if [ -z "$SERVER_IP" ]; then
-        echo -e "${RED}No IP address entered. Aborting.${NC}"
-        return 1
-    fi
-
-    echo -e "${CYAN}Testing connection to $SERVER_IP on UDP port 5000 (the stream port)...${NC}"
-    echo "Please make sure the receiver.sh is STOPPED and you ran 'ncat -u -l 5000' on the server."
-    echo -n "Press Enter to send UDP packet..."
-    read -r
-    
-    # Send a UDP packet
-    echo -n "udp_test_packet" | nc -u -w 3 "$SERVER_IP" 5000
-    
-    echo "Packet sent."
-    echo "Check your 'ncat' terminal on the server. Did 'udp_test_packet' appear?"
 }
 
 
@@ -253,15 +233,14 @@ handshake_test_udp() {
 while true; do
     show_header
     echo -e "${GREEN}1.${NC} Install/Update Dependencies"
-    echo -e "${GREEN}2.${NC} Start Stream (H.264)"
+    echo -e "${GREEN}2.${NC} Start Stream (RTSP/H.264)"
     echo -e "${GREEN}3.${NC} Stop Stream"
-    echo -e "${CYAN}4.${NC} Check Camera (gphoto2)"
-    echo -e "${BLUE}5.${NC} Run TCP Handshake (Port 8080)"
-    echo -e "${BLUE}6.${NC} Run UDP Stream Test (Port 5000)"
-    echo -e "${YELLOW}7.${NC} Update This Script (from GitHub)"
-    echo -e "${RED}8.${NC} Exit"
+    echo -e "${CYAN}4.${NC} Check Camera (V4L2)"
+    echo -e "${BLUE}5.${NC} Test RTSP Server Connection (TCP $RTSP_PORT)"
+    echo -e "${YELLOW}6.${NC} Update This Script (from GitHub)"
+    echo -e "${RED}7.${NC} Exit"
     echo ""
-    echo -e "${YELLOW}Choose an option [1-8]:${NC}"
+    echo -e "${YELLOW}Choose an option [1-7]:${NC}"
     read -r choice
     
 
@@ -275,25 +254,33 @@ while true; do
         3)
             stop_stream
             ;;
-        4)
-            check_camera
-            ;;
-        5)
-            handshake_test_tcp
+        4. | 5)
+            # Handle 4 and 5 which are now different
+            if [ "$choice" = "4" ]; then
+                check_camera
+            else
+                test_rtsp_connection
+            fi
             ;;
         6)
-            handshake_test_udp
-            ;;
-        7)
             self_update
             ;;
-        8)
+        7)
             echo "Exiting."
             stop_stream # Try to stop stream on exit
             exit 0
             ;;
         *)
-            echo -e "${RED}Invalid option. Please try again.${NC}"
+            # Handle old menu numbers gracefully
+            if [ "$choice" = "5" ] || [ "$choice" = "6" ]; then
+                 echo -e "${YELLOW}Menu has changed. Please select from the new options.${NC}"
+            elif [ "$choice" = "8" ]; then
+                 echo "Exiting."
+                 stop_stream
+                 exit 0
+            else
+                echo -e "${RED}Invalid option. Please try again.${NC}"
+            fi
             ;;
     esac
     echo ""
