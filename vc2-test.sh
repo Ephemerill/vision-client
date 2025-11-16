@@ -32,9 +32,8 @@ echo "Target: ${RTSP_URL}"
 # This will run forever until you stop it (Ctrl+C)
 ffmpeg \
     -f v4l2 \
-    -framerate 30 \
     -i ${VIDEO_DEVICE} \
-    -pix_fmt yuv420p \
+    -vf "fps=30" \
     -c:v h264_v4l2m2m \
     -b:v ${BITRATE} \
     -f rtsp \
