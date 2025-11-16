@@ -21,7 +21,7 @@ MEDIAMTX_URL="https://github.com/bluenviron/mediamtx/releases/download/v1.15.3/m
 
 # ffmpeg Stream Client
 VIDEO_DEVICE="/dev/video0"
-BITRATE="3000k"      # 4 Mbps. (Lower to 2000k if buffering)
+BITRATE="4000k"      # 4 Mbps. (Lower to 2000k if buffering)
 FPS=30               # Target framerate
 STREAM_NAME="cam"
 PUBLISH_USER="admin"
@@ -52,7 +52,7 @@ show_header() {
     echo '    \_/    \__|\_______/ \__| \______/ \__|  \__|       \______/ \__|\__| \_______|\__|  \__|  \____/    ⠀⠀⠈⠛⠿⠶⣶⡶⠿⠟⠉'
     echo ""
     tput smam
-    echo -e "  ${PURPLE}Vision Controller v1.1 (ffmpeg + mediamtx)${NC}"
+    echo -e "  ${PURPLE}Vision Controller v1.2 (ffmpeg + mediamtx)${NC}"
     echo ""
 }
 
@@ -188,10 +188,11 @@ start_stream() {
     echo -e "${CYAN}Source: ${VIDEO_DEVICE} | Target: ${RTSP_URL}${NC}"
     
     # This is our working ffmpeg command
-    # Added -fflags nobuffer to reduce input latency
+    # Added -video_size 1280x720 to request 720p from the source
     local FFMPEG_CMD="ffmpeg \
         -fflags nobuffer \
         -f v4l2 \
+        -video_size 1280x720 \
         -i ${VIDEO_DEVICE} \
         -vf \"fps=${FPS}\" \
         -c:v h264_v4l2m2m \
@@ -358,7 +359,7 @@ while true; do
         4) stop_stream ;;
         5) view_stream_log ;;
         6) view_server_log ;;
-        7) check_camera ;; # Fixed the typo here
+        7) check_camera ;;
         8) list_camera_formats ;;
         9) install_dependencies ;;
         10) self_update ;;
