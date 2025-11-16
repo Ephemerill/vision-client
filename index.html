@@ -1,40 +1,68 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pi Stream</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            display: grid;
-            place-items: center;
-            min-height: 90vh;
-            background-color: #f0f0f0;
-            color: #333;
-            margin: 0;
-        }
-        .container {
-            width: 80%;
-            max-width: 1280px;
-        }
-        h1 {
-            text-align: center;
-            color: #555;
-        }
-        img {
-            width: 100%;
-            border-radius: 8px;
-            background-color: #000;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-        }
-    </style>
+  <title>Pi Video Stream</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background-color: #222;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+    #video-container {
+      width: 80%;
+      max-width: 1280px;
+      border: 1px solid #555;
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      background-color: #000;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 </head>
 <body>
-    <div class="container">
-        <h1>Raspberry Pi Live Stream</h1>
-        <!-- The browser will connect to the stream from receiver.sh -->
-        <img src="http://127.0.0.1:8080" alt="Live stream from Pi">
-    </div>
+
+  <h1>Raspberry Pi Live Stream</h1>
+
+  <div id="video-container">
+    <video id="video" controls autoplay></video>
+  </div>
+
+  <script>
+    // --- THIS IS THE ONLY LINE YOU NEED TO EDIT ---
+    var streamUrl = 'http://100.114.210.58:8888/cam/index.m3u8';
+    // --- (Replace with your Pi's Tailscale IP) ---
+
+    var video = document.getElementById('video');
+
+    if (Hls.isSupported()) {
+      var hls = new Hls();
+      hls.loadSource(streamUrl);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, function() {
+        console.log('Manifest parsed, attempting to play...');
+        video.play().catch(error => {
+          console.error('Autoplay was prevented:', error);
+          console.log('User interaction might be required to play the video.');
+        });
+      });
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // HLS is natively supported on Safari
+      video.src = streamUrl;
+      video.addEventListener('loadedmetadata', function() {
+        video.play().catch(error => {
+          console.error('Autoplay was prevented:', error);
+        });
+      });
+    }
+  </script>
+
 </body>
 </html>

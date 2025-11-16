@@ -17,7 +17,7 @@ STREAM_NAME="cam"
 PUBLISH_USER="admin"
 PUBLISH_PASS="mysecretpassword"
 
-# --- Advanced ---
+# --- Advanced ----
 # H.264 bitrate. 4M = 4000k.
 # Adjust 2M (2000k) for lower bandwidth, or 8M (8000k) for higher quality.
 BITRATE="4000k"
