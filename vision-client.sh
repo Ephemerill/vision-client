@@ -176,7 +176,7 @@ start_stream() {
         -c:v h264_v4l2m2m \
         -b:v ${BITRATE} \
         -maxrate ${BITRATE} \
-        -bufsize 5000k \
+        -bufsize 512k \
         -g 30 \
         -keyint_min 30 \
         -f rtsp \
