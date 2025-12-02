@@ -170,15 +170,15 @@ start_stream() {
     
     local FFMPEG_CMD="ffmpeg \
         -f v4l2 \
-        -video_size 1280x720 \
+        -video_size 640x480 \  <-- LOWER RES FOR TAILSCALE SPEED
         -framerate ${FPS} \
         -i ${VIDEO_DEVICE} \
         -c:v h264_v4l2m2m \
-        -b:v ${BITRATE} \
-        -maxrate ${BITRATE} \
-        -bufsize 512k \
-        -g 30 \
-        -keyint_min 30 \
+        -b:v 2000k \
+        -maxrate 2000k \
+        -bufsize 0 \           <-- DISABLE BUFFERING AT SOURCE
+        -g 5 \                 <-- CRITICAL: Keyframe every 5 frames
+        -keyint_min 5 \        <-- CRITICAL
         -f rtsp \
         -rtsp_transport tcp \
         ${RTSP_URL}"
