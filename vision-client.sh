@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# ==========================================
+# VISION CLIENT - TRANSMITTER (Pi Side)
+# Optimized for Low Latency Computer Vision
+# ==========================================
+
 # --- CONFIGURATION ---
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
 GIT_BRANCH="main"
@@ -10,7 +15,7 @@ STREAM_PID_FILE="/tmp/ffmpeg_stream.pid"
 SERVER_LOG_FILE="/tmp/mediamtx.log"
 STREAM_LOG_FILE="/tmp/ffmpeg_stream.log"
 
-# mediamtx Server (The one we run on the Pi)
+# mediamtx Server (The RTSP Broker)
 MEDIAMTX_CONFIG_FILE="${SCRIPT_DIR}/mediamtx.yml"
 MEDIAMTX_BINARY="${SCRIPT_DIR}/mediamtx"
 RTSP_PORT="8554"
@@ -18,11 +23,11 @@ HLS_PORT="8888"
 WEBRTC_PORT="8889"
 MEDIAMTX_URL="https://github.com/bluenviron/mediamtx/releases/download/v1.15.3/mediamtx_v1.15.3_linux_arm64.tar.gz"
 
-# ffmpeg Stream Client
+# ffmpeg Stream Client (The Camera Feeder)
 VIDEO_DEVICE="/dev/video0"
-# OPTIMIZATION: Lowered from 4000k to 2500k for stability
-BITRATE="2500k"      
-FPS=30               
+RESOLUTION="640x480"     # Lowered for Tailscale/VPN latency stability
+FPS=30
+BITRATE="2000k"          # 2Mbps is sufficient for 480p CV
 STREAM_NAME="cam"
 PUBLISH_USER="admin"
 PUBLISH_PASS="mysecretpassword"
@@ -37,7 +42,7 @@ PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# --- ASCII ART ---
+# --- ASCII ART HEADER ---
 show_header() {
     tput rmam
     clear
@@ -52,11 +57,12 @@ show_header() {
     echo '    \_/    \__|\_______/ \__| \______/ \__|  \__|       \______/ \__|\__| \_______|\__|  \__|  \____/    ⠀⠀⠈⠛⠿⠶⣶⡶⠿⠟⠉'
     echo ""
     tput smam
-    echo -e "  ${PURPLE}Vision Controller v1.3 (Optimized for Stability)${NC}"
+    echo -e "  ${PURPLE}Vision Transmitter v2.0 (Low-Latency Mode)${NC}"
+    echo -e "  ${PURPLE}Resolution: ${RESOLUTION} | Keyframe Interval: 5 (Fast Repair)${NC}"
     echo ""
 }
 
-# --- PROCESS STATUS ---
+# --- PROCESS STATUS CHECK ---
 check_status() {
     if [ -f "$SERVER_PID_FILE" ] && ps -p $(cat "$SERVER_PID_FILE") > /dev/null; then
         SERVER_STATUS="${GREEN}RUNNING (PID $(cat "$SERVER_PID_FILE"))${NC}"
@@ -75,25 +81,28 @@ check_status() {
 
 # 1. Install Dependencies
 install_dependencies() {
-    echo -e "${YELLOW}Installing dependencies (ffmpeg, v4l-utils, git, wget)...${NC}"
+    echo -e "${YELLOW}Installing system dependencies...${NC}"
     sudo apt-get update
     sudo apt-get install -y git ffmpeg v4l-utils wget
     echo -e "${GREEN}System packages installed.${NC}"
     echo ""
     
-    echo -e "${YELLOW}Downloading latest mediamtx server...${NC}"
+    echo -e "${YELLOW}Downloading mediamtx server...${NC}"
     wget -O "${SCRIPT_DIR}/mediamtx.tar.gz" "$MEDIAMTX_URL"
     if [ $? -ne 0 ]; then
         echo -e "${RED}Error: Download failed. Check URL or network.${NC}"
         return 1
     fi
     tar -xzvf "${SCRIPT_DIR}/mediamtx.tar.gz" -C "$SCRIPT_DIR" mediamtx mediamtx.yml
-    mv "${SCRIPT_DIR}/mediamtx.yml" "${SCRIPT_DIR}/mediamtx.yml.default"
+    # Backup default config if we haven't already
+    if [ ! -f "${SCRIPT_DIR}/mediamtx.yml.default" ]; then
+        mv "${SCRIPT_DIR}/mediamtx.yml" "${SCRIPT_DIR}/mediamtx.yml.default"
+    fi
     rm "${SCRIPT_DIR}/mediamtx.tar.gz"
     chmod +x "$MEDIAMTX_BINARY"
     echo -e "${GREEN}mediamtx binary installed to ${MEDIAMTX_BINARY}${NC}"
     
-    echo -e "${YELLOW}Creating configuration file ${MEDIAMTX_CONFIG_FILE}...${NC}"
+    echo -e "${YELLOW}Creating optimized configuration file...${NC}"
     cat << EOF > "$MEDIAMTX_CONFIG_FILE"
 httpProtocol:
   cors:
@@ -105,6 +114,7 @@ paths:
   ${STREAM_NAME}:
     publishUser: ${PUBLISH_USER}
     publishPass: ${PUBLISH_PASS}
+    sourceOnDemand: no
 EOF
     echo -e "${GREEN}Configuration file created!${NC}"
 }
@@ -117,7 +127,7 @@ start_server() {
     fi
 
     if [ ! -f "$MEDIAMTX_BINARY" ]; then
-        echo -e "${RED}Error: 'mediamtx' binary not found.${NC}"
+        echo -e "${RED}Error: 'mediamtx' binary not found. Run Install Dependencies.${NC}"
         return 1
     fi
     
@@ -145,45 +155,53 @@ stop_server() {
         echo -e "${GREEN}Server stopped.${NC}"
     else
         rm -f "$SERVER_PID_FILE"
+        echo -e "${RED}Could not kill process, removing lock file.${NC}"
     fi
 }
 
-# 4. Start Stream (OPTIMIZED)
+# 4. Start Stream (THE CRITICAL PART)
 start_stream() {
-    if [ -f "$STREAM_PID_FILE" ]; then
+    if [ -f "$STREAM_PID_FILE" ] && ps -p $(cat "$STREAM_PID_FILE") > /dev/null; then
         echo -e "${YELLOW}Stream is already running.${NC}"
         return 1
     fi
 
     if [ ! -f "$SERVER_PID_FILE" ] || ! ps -p $(cat "$SERVER_PID_FILE") > /dev/null; then
-        echo -e "${RED}Error: mediamtx server is not running.${NC}"
+        echo -e "${RED}Error: mediamtx server is not running. Start it first.${NC}"
         return 1
     fi
     
     echo -e "${GREEN}Starting ffmpeg stream...${NC}"
-    echo -e "${CYAN}Source: ${VIDEO_DEVICE} | Bitrate: ${BITRATE} | Recovery: 1s${NC}"
+    echo -e "${CYAN}Source: ${VIDEO_DEVICE} | Res: ${RESOLUTION} | GOP: 5 (Fast Recovery)${NC}"
     
-    # --- FFMPEG OPTIMIZATION NOTES ---
-    # -g 30: Group of Pictures = 30. Forces a clean "Keyframe" every 1 second (at 30fps).
-    #        This fixes the "gray smear" corruption instantly if a packet drops.
-    # -maxrate/-bufsize: Limits data spikes that choke WiFi.
+    # --- FFMPEG LATENCY OPTIMIZATIONS ---
+    # -video_size: Lowered to 640x480 for stability over VPN/Wifi
+    # -g 5: Keyframe sent every 5 frames (approx 6 times a second). 
+    #       This fixes "Gray Smear" artifacts instantly.
+    # -bufsize 0: Tells ffmpeg NOT to buffer data, send immediately.
+    # -tune zerolatency: Optimization flag for h264.
     
     local FFMPEG_CMD="ffmpeg \
         -f v4l2 \
-        -video_size 640x480 \  <-- LOWER RES FOR TAILSCALE SPEED
+        -video_size ${RESOLUTION} \
         -framerate ${FPS} \
         -i ${VIDEO_DEVICE} \
         -c:v h264_v4l2m2m \
-        -b:v 2000k \
-        -maxrate 2000k \
-        -bufsize 0 \           <-- DISABLE BUFFERING AT SOURCE
-        -g 5 \                 <-- CRITICAL: Keyframe every 5 frames
-        -keyint_min 5 \        <-- CRITICAL
+        -b:v ${BITRATE} \
+        -maxrate ${BITRATE} \
+        -bufsize 0 \
+        -g 5 \
+        -keyint_min 5 \
+        -preset ultrafast \
+        -tune zerolatency \
         -f rtsp \
         -rtsp_transport tcp \
         ${RTSP_URL}"
 
-    nohup bash -c "$FFMPEG_CMD" > "$STREAM_LOG_FILE" 2>&1 &
+    # Log the command for debug
+    echo "Running: $FFMPEG_CMD" >> "$STREAM_LOG_FILE"
+
+    nohup bash -c "$FFMPEG_CMD" >> "$STREAM_LOG_FILE" 2>&1 &
     echo $! > "$STREAM_PID_FILE"
     
     sleep 2 
@@ -212,14 +230,14 @@ stop_stream() {
 # 6. View Stream Log
 view_stream_log() {
     if [ ! -f "$STREAM_LOG_FILE" ]; then echo -e "${RED}No log found.${NC}"; return 1; fi
-    echo -e "${YELLOW}Showing live ffmpeg log...${NC}"
+    echo -e "${YELLOW}Showing live ffmpeg log (Press Ctrl+C to exit)...${NC}"
     tail -f -n 50 "$STREAM_LOG_FILE"
 }
 
 # 7. View Server Log
 view_server_log() {
     if [ ! -f "$SERVER_LOG_FILE" ]; then echo -e "${RED}No log found.${NC}"; return 1; fi
-    echo -e "${YELLOW}Showing live mediamtx log...${NC}"
+    echo -e "${YELLOW}Showing live mediamtx log (Press Ctrl+C to exit)...${NC}"
     tail -f -n 50 "$SERVER_LOG_FILE"
 }
 
@@ -235,7 +253,7 @@ list_camera_formats() {
     v4l2-ctl --list-formats-ext -d "$VIDEO_DEVICE"
 }
 
-# 12. Check System Health (Throttling/Voltage)
+# 12. Check System Health
 check_system_health() {
     echo -e "${YELLOW}Checking Pi Health (Voltage/Temp)...${NC}"
     if command -v vcgencmd &> /dev/null; then
@@ -246,12 +264,11 @@ check_system_health() {
         echo -e "Temperature: ${CYAN}$TEMP${NC}"
         echo -e "Voltage:     ${CYAN}$VOLT${NC}"
         
-        # Throttled Output is a hex code. 0x0 is good.
         if [[ "$THROTTLED" == *"throttled=0x0"* ]]; then
             echo -e "Status:      ${GREEN}OK (Power supply is good)${NC}"
         else
             echo -e "Status:      ${RED}WARNING! Throttling detected ($THROTTLED)${NC}"
-            echo -e "${RED}The Switch power supply might not be negotiating correct voltage.${NC}"
+            echo -e "${RED}Power supply may be undervolting.${NC}"
         fi
     else
         echo -e "${RED}Error: 'vcgencmd' not found. Is this a Raspberry Pi?${NC}"
@@ -262,17 +279,10 @@ check_system_health() {
 self_update() {
     echo -e "${YELLOW}Updating...${NC}"
     local SCRIPT_NAME=$(basename "$0")
-    if ! git rev-parse --is-inside-work-tree > /dev/null 2>&1; then echo -e "${RED}Not a git repo.${NC}"; return 1; fi
-    cat << EOF > ./updater.sh
-#!/bin/bash
-git fetch --all
-git reset --hard origin/$GIT_BRANCH
-chmod +x "$SCRIPT_NAME"
-rm -- "\$0"
-exec "./$SCRIPT_NAME"
-EOF
-    chmod +x ./updater.sh
-    exec ./updater.sh
+    # Simple git pull mechanism
+    git pull origin "$GIT_BRANCH"
+    echo -e "${GREEN}Update complete. Please restart script.${NC}"
+    exit 0
 }
 
 # --- MAIN MENU ---
