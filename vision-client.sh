@@ -25,9 +25,9 @@ MEDIAMTX_URL="https://github.com/bluenviron/mediamtx/releases/download/v1.15.3/m
 
 # ffmpeg Stream Client (The Camera Feeder)
 VIDEO_DEVICE="/dev/video0"
-RESOLUTION="640x480"     # Lowered for Tailscale/VPN latency stability
+RESOLUTION="1280x720"     # Lowered for Tailscale/VPN latency stability
 FPS=30
-BITRATE="2000k"          # 2Mbps is sufficient for 480p CV
+BITRATE="3000k"          # 2Mbps is sufficient for 480p CV
 STREAM_NAME="cam"
 PUBLISH_USER="admin"
 PUBLISH_PASS="mysecretpassword"
